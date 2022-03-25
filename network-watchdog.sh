@@ -29,6 +29,7 @@ pref_wifi_con_count=0
 wifiNetworkSelected=0
 lteNetworkSelected=0
 hmiDetected=0
+camConnected=0
 
 > $logFile # Clear the log file
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
@@ -230,6 +231,42 @@ done
 # Main watchdog loop
 while true
 do
+	# Check if a camera is connected
+	camDetected=$(ls /dev/* | grep /dev/video0)
+
+	if [ -z "$camDetected" ]
+	then
+		# Cammera is not connected
+		if [ $camConnected -eq 1 ]
+		then
+			nowTime=$(date +"%T")
+			echo "Camera disconnected. Stopping GStreamer."
+			printf "%s Camera disconnected. Stopping GStreamer.\n" $nowTime >> $logFile
+			service gstreamer-autostart stop
+		fi
+
+		camConnected=0
+	else
+		# Camera is connected
+		if [ $camConnected -eq 0 ]
+		then
+			nowTime=$(date +"%T")
+			echo "Camera connected."
+			printf "%s Camera connected.\n" $nowTime >> $logFile
+			
+			if [ $networkStatus -eq $Connected ]
+			then
+				service gstreamer-autostart start
+				nowTime=$(date +"%T")
+				echo "GStreamer started."
+				printf "%s Gstreamer started.\n" $nowTime >> $logFile
+
+			fi
+		fi
+
+		camConnected=1
+	fi
+
 	# Check if the mobile connection state is DOWN
 	if [ $wifiNetworkSelected -eq 1 ]
 	then
@@ -263,6 +300,15 @@ do
 			echo "Switching to LOITER mode..."
 			printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
 			/usr/local/bin/chmod_offline.py loiter >> $logFile
+
+			if [ $camConnected -eq 1 ]
+			then
+				nowTime=$(date +"%T")
+				echo "Stopping GStreamer..."
+				printf "%s Stopping GStreamer...\n" $nowTime >> $logFile
+				service gstreamer-autostart stop
+			fi
+
 			net_con_count=0
 
 			if [ $wifiNetworkSelected -eq 1 ]
@@ -414,6 +460,14 @@ do
 				printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
 				/usr/local/bin/chmod_offline.py loiter >> $logFile
 
+				if [ $camConnected -eq 1 ]
+				then
+					nowTime=$(date +"%T")
+					echo "Stopping GStreamer..."
+					printf "%s Stopping GStreamer...\n" $nowTime >> $logFile
+					service gstreamer-autostart stop
+				fi
+
 				nowTime=$(date +"%T")
 				echo "Restarting the VPN service..."
 				printf "%s Restarting the VPN service...\n" $nowTime >> $logFile
@@ -466,6 +520,14 @@ do
 						printf "%s MAVProxy starting failed. Restarting...\n" $nowTime >> $logFile
 						service mavproxy-autostart stop
 						networkStatus=$Reconnecting
+					fi
+					
+					if [ $camConnected -eq 1 ]
+					then
+						service gstreamer-autostart start
+						nowTime=$(date +"%T")
+						echo "GStreamer started."
+						printf "%s GStreamer started.\n" $nowTime >> $logFile
 					fi
 				fi
 			else
