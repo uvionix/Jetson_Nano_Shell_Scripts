@@ -4,6 +4,15 @@
 updates_repo_cloned=0
 patchMapFile="/etc/default/uvx-patch-map"
 
+echo "Stopping the network watchdog service..."
+service network-watchdog stop
+
+echo "Stopping the VPN service..."
+service openvpn-autostart stop
+
+echo "Stopping MAVProxy..."
+service mavproxy-autostart stop
+
 # Get the logged-in username
 usr=$(logname)
 
@@ -24,10 +33,12 @@ then
         rm -d -r Jetson_Nano_Updates
 fi
 
+echo "Checking for updates..."
+sleep 10
+
 # Clone the patch map
 git clone https://github.com/sdarmonski/Jetson_Nano_Patch_Map.git
 
-echo "Checking for updates..."
 grep patch /home/$usr/Repos/Jetson_Nano_Patch_Map/uvx-patch-map | while read -r line; do
 	patch_applied=$(grep "$line" /etc/default/uvx-patch-map)
 
@@ -68,3 +79,6 @@ then
 fi
 
 rm -d -r Jetson_Nano_Patch_Map
+
+echo "Starting the network watchdog service..."
+service network-watchdog start
