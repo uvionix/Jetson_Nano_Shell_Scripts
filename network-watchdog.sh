@@ -66,6 +66,10 @@ check_camera_connected()
 			printf "%s Camera disconnected. GStreamer stopped.\n" $nowTime >> $logFile
 
 			# Stop the recording service
+			nowTime=$(date +"%T")
+			service camera-record stop
+			echo "Camera disconnected. Recording stopped."
+			printf "%s Camera disconnected. Recording stopped.\n" $nowTime >> $logFile
 		fi
 
 		camConnected=0
@@ -78,6 +82,9 @@ check_camera_connected()
 			printf "%s Camera connected.\n" $nowTime >> $logFile
 
 			# Start the recording service
+			service camera-record start
+			echo "Recording started."
+			printf "%s Recording started.\n" $nowTime >> $logFile
 			
 			if [ $networkStatus -eq $Connected ]
 			then
@@ -98,6 +105,9 @@ choose_connection_type()
 {
 	while true
 	do
+		# Check if a camera is connected
+		check_camera_connected
+
 		if [ $hmiDetected -eq 0 ] && [ $lteNetworkSelected -eq 0 ];
 		then
 			# Select LTE connection type
@@ -232,6 +242,9 @@ network_connect()
 {
 	while true
 	do
+		# Check if a camera is connected
+		check_camera_connected
+
 		echo "Attempting connection to" "$mobileConnectionName" "..."
 		printf "Attempting connection to %s...\n" "$mobileConnectionName" >> $logFile
 		connectionFound=$(nmcli connection | grep -i -o "$mobileConnectionName")
