@@ -64,6 +64,8 @@ check_camera_connected()
 			service gstreamer-autostart stop
 			echo "Camera disconnected. GStreamer stopped."
 			printf "%s Camera disconnected. GStreamer stopped.\n" $nowTime >> $logFile
+
+			# Stop the recording service
 		fi
 
 		camConnected=0
@@ -74,6 +76,8 @@ check_camera_connected()
 			nowTime=$(date +"%T")
 			echo "Camera connected."
 			printf "%s Camera connected.\n" $nowTime >> $logFile
+
+			# Start the recording service
 			
 			if [ $networkStatus -eq $Connected ]
 			then
