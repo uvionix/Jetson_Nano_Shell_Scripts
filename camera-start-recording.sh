@@ -9,6 +9,12 @@ res=$2
 # Get the capture device parameter
 dev=$3
 
+# Get the container parameter
+container=$4
+
+# Get the file duration
+file_duration=$5
+
 # Get a username
 usr=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
 
@@ -28,7 +34,7 @@ do
     file_cnt=1
     while true
     do
-        filename="vid-$file_cnt.mkv"
+        filename="vid-$file_cnt.$container"
         file_exists=$(ls /home/$usr/Videos/$nowDate | grep -o $filename)
 
         if [ ! -z "$file_exists" ]
@@ -40,7 +46,7 @@ do
     done
 
     # Start recording
-    /usr/bin/ffmpeg -f v4l2 -s $res -input_format mjpeg -i $dev -r $fps -t 180 /home/$usr/Videos/$nowDate/$filename -vsync 1 -y
+    /usr/bin/ffmpeg -f v4l2 -s $res -input_format mjpeg -i $dev -r $fps -c:v libx264 -preset superfast -t $file_duration /home/$usr/Videos/$nowDate/$filename -y
     chown $usr /home/$usr/Videos/$nowDate/$filename
     echo "Recording ended. Starting new file..."
 done
