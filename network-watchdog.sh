@@ -130,11 +130,17 @@ choose_connection_type()
 			if [ $len -gt $((min_wifi_con_name_length-1)) ]
 			then
 				wifiConnectionFound=$(nmcli device wifi list | grep "$wifiConnectionName")
+				pref_wifi_con_count=0
 			else
+				pref_wifi_con_count=$((pref_wifi_con_count+1))
 				echo "Invalid WIFI connection name" "$wifiConnectionName" "obtained. Connection name must be at least" "$min_wifi_con_name_length" "characters long!"
 				printf "Invalid WIFI connection name %s obtained. Connection name must be at least %d characters long!\n" "$wifiConnectionName" $min_wifi_con_name_length >> $logFile
 				sleep $samplingPeriodSec
-				continue
+
+				if [ $pref_wifi_con_count -le $max_pref_wifi_con_count ]
+				then
+					continue
+				fi
 			fi
 		fi
 
@@ -282,6 +288,22 @@ network_connect()
 	done
 }
 
+# Disconnect from all networks
+network_disconnect()
+{
+	while true
+	do
+		conname=$(nmcli device | grep -w -m1 connected | awk -F' ' '{print $4}')
+
+		if [ ! -z "$conname" ]
+		then
+			nmcli connection down "$conname"
+		else
+			break
+		fi
+	done
+}
+
 ### MAIN SCRIPT STARTS HERE ###
 
 # SCRIPT PARAMETERS
@@ -340,7 +362,8 @@ do
 	# Check if the mobile connection state is DOWN
 	if [ $wifiNetworkSelected -eq 1 ]
 	then
-		mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
+		# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
+		mobileConnectionState=$(nmcli device | grep wifi | awk -F' ' '{print $3}' | grep "discon")
 	else
 		mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "discon")
 	fi
@@ -487,8 +510,8 @@ do
 					if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 					then
 						echo "Waiting for IP address timeout. Disconnecting from network..."
-						printf "Waiting for IP address timeout. Disconnecting from network..." >> $logFile
-						nmcli connection down "$mobileConnectionName"
+						printf "Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
+						network_disconnect
 					fi
 
 					sleep $samplingPeriodSec
@@ -511,8 +534,8 @@ do
 				if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 				then
 					echo "Waiting for IP address timeout. Disconnecting from network..."
-					printf "Waiting for IP address timeout. Disconnecting from network..." >> $logFile
-					nmcli connection down "$mobileConnectionName"
+					printf "Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
+					network_disconnect
 				fi
 
 				sleep $samplingPeriodSec
