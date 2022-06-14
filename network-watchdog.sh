@@ -293,10 +293,12 @@ network_disconnect()
 {
 	while true
 	do
-		conname=$(nmcli device | grep -w -m1 connected | awk -F' ' '{print $4}')
+		conname=$(nmcli device | grep -w -m1 connected)
 
 		if [ ! -z "$conname" ]
 		then
+			# Get the actual connection name after removing the leading and trailing whitespaces
+			conname=$(nmcli device | grep -w -m1 connected | awk -F'connected' '{print $2}' | sed -e 's/^[ \t]*//' | sed -e 's/[ \t]*$//')
 			nmcli connection down "$conname"
 		else
 			break
@@ -395,11 +397,14 @@ do
 			printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
 			/usr/local/bin/chmod_offline.py loiter >> $logFile
 			
-			nowTime=$(date +"%T")
-			echo "Starting switch to RTL service..."
-			printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
-			service switch-to-rtl start
-			switch_to_RTL_mode_service_started=1
+			if [ $switch_to_RTL_mode_service_started -eq 0 ]
+			then
+				nowTime=$(date +"%T")
+				echo "Starting switch to RTL service..."
+				printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
+				service switch-to-rtl start
+				switch_to_RTL_mode_service_started=1
+			fi
 
 			if [ $camConnected -eq 1 ]
 			then
@@ -512,6 +517,7 @@ do
 						echo "Waiting for IP address timeout. Disconnecting from network..."
 						printf "Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
 						network_disconnect
+						networkStatus=$Reconnecting
 					fi
 
 					sleep $samplingPeriodSec
@@ -536,6 +542,7 @@ do
 					echo "Waiting for IP address timeout. Disconnecting from network..."
 					printf "Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
 					network_disconnect
+					networkStatus=$Reconnecting
 				fi
 
 				sleep $samplingPeriodSec
@@ -579,11 +586,14 @@ do
 				printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
 				/usr/local/bin/chmod_offline.py loiter >> $logFile
 
-				nowTime=$(date +"%T")
-				echo "Starting switch to RTL service..."
-				printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
-				service switch-to-rtl start
-				switch_to_RTL_mode_service_started=1
+				if [ $switch_to_RTL_mode_service_started -eq 0 ]
+				then
+					nowTime=$(date +"%T")
+					echo "Starting switch to RTL service..."
+					printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
+					service switch-to-rtl start
+					switch_to_RTL_mode_service_started=1
+				fi
 
 				if [ $camConnected -eq 1 ]
 				then
