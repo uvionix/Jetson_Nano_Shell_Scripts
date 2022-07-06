@@ -100,6 +100,70 @@ check_camera_connected()
 	fi
 }
 
+# Check the prerequisites for starting MAVProxy
+check_mavproxy_prerequisites()
+{
+	# Get the UART device name
+	uart_device=$(grep -i "device=" /etc/default/mavproxy-setup | awk -F'"' '{print $2}')
+	echo "MAVProxy UART device is: $uart_device"
+	printf "\t MAVProxy UART device is: %s\n" $uart_device >> $logFile
+
+	# Check the status of the nvgetty service and disable it if necessary
+	nvgetty_found=""
+	nvgetty_found=$(service nvgetty status)
+
+	if [ ! -z "$nvgetty_found" ]
+	then
+		# nvgetty service exists
+		nvgetty_disabled=$(service nvgetty status | grep -i loaded: | grep -i "nvgetty.service; disabled")
+		nvgetty_inactive=$(service nvgetty status | grep -i active: | grep -i inactive)
+
+		if [ -z "$nvgetty_disabled" ] || [ -z "$nvgetty_inactive" ];
+		then
+			echo "nvgetty service is enabled. Stopping and disabling the nvgetty service..."
+			printf "\t nvgetty service is enabled. Stopping and disabling the nvgetty service...\n" >> $logFile
+			systemctl stop nvgetty
+			sleep 2
+			systemctl disable nvgetty
+			schedule_reboot=1
+		else
+			echo "nvgetty service is disabled."
+		fi
+	fi
+
+	# Check the permissions of the MAVProxy UART port and modify them accordingly
+	port_rights=$(stat -c "%a" $uart_device)
+
+	if [ ! -z "$port_rights" ] && [ $port_rights -lt 660 ];
+	then
+		echo "Port $uart_device permissions set to $port_rights. Changing permissions of port $uart_device to 666..."
+		printf "\t Port %s permissions set to %s. Changing permissions of port %s to 666...\n" $uart_device $port_rights $uart_device >> $logFile
+		chmod 666 $uart_device
+		schedule_reboot=1
+	else
+		if [ ! -z "$port_rights" ] && [ $port_rights -ge 660 ];
+		then
+			echo "Port $uart_device permissions are set correctly!"
+			printf "\t Port %s permissions are set correctly!\n" $uart_device >> $logFile
+		else
+			echo "Port $uart_device not found!"
+			printf "\t Port %s not found!\n" $uart_device >> $logFile
+		fi
+	fi
+
+	if [ $schedule_reboot -eq 1 ]
+	then
+		echo "Rebooting system..."
+		printf "\t Rebooting system...\n" >> $logFile
+		sleep 5
+		reboot
+	elif [ ! -z "$port_rights" ]
+	then
+		echo "MAVProxy prerequisites met!"
+		printf "\t MAVProxy prerequisites met!\n" >> $logFile
+	fi
+}
+
 # Choose connection type (LTE or WIFI) and initialize the connection name and interface
 choose_connection_type()
 {
@@ -273,6 +337,10 @@ network_connect()
 				printf "Date and time set to %s %s\n" $nowDate $nowTime >> $logFile
 				printf "============= %s %s STARTING LOG FILE =============\n" $nowDate $nowTime >> $logFile
 
+				echo "Checking MAVProxy prerequisites..."
+				printf "%s Checking MAVProxy prerequisites...\n" $nowTime >> $logFile
+				check_mavproxy_prerequisites
+
 				echo "Starting the VPN service..."
 				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
 				service openvpn-autostart start
@@ -337,6 +405,7 @@ lteNetworkSelected=0
 switch_to_RTL_mode_service_started=0
 hmiDetected=0
 camConnected=0
+schedule_reboot=0
 
 > $logFile # Clear the log file
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
