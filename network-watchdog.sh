@@ -50,50 +50,63 @@ check_keyboard_connected()
 	sleep 20
 }
 
+# Update the keyboard connected status
+update_keyboard_connected()
+{
+	hmiDetected=0
+
+	for dev in /sys/bus/usb/devices/*-*:*
+	do
+		if [ -f $dev/bInterfaceClass ]
+		then
+			if [[ "$(cat $dev/bInterfaceClass)" == "03" && "$(cat $dev/bInterfaceProtocol)" == "01" ]]
+			then
+				hmiDetected=1
+				return
+			fi
+		fi
+	done
+}
+
 # Check if a camera is connected
 check_camera_connected()
 {
-	camDetected=$(ls /dev/* | grep /dev/video0)
+	camDetected=$(ls /dev/* | grep $video_device)
 
 	if [ -z "$camDetected" ]
 	then
 		# Cammera is not connected
 		if [ $camConnected -eq 1 ]
 		then
-			nowTime=$(date +"%T")
+			# Camera has been disconnected - stop gstreamer
 			service gstreamer-autostart stop
 			echo "Camera disconnected. GStreamer stopped."
-			printf "%s Camera disconnected. GStreamer stopped.\n" $nowTime >> $logFile
-
-			# Stop the recording service
-			nowTime=$(date +"%T")
-			service camera-record stop
-			echo "Camera disconnected. Recording stopped."
-			printf "%s Camera disconnected. Recording stopped.\n" $nowTime >> $logFile
+			printf "\t Camera disconnected. GStreamer stopped.\n" >> $logFile
 		fi
 
 		camConnected=0
 	else
-		# Camera is connected
+		# Camera is connected - start gstreamer only if no keyboard is detected
+		if [ $hmiDetected -eq 1 ]
+		then
+			# Keyboard has been detected - stop gstreamer if started
+			if [ $camConnected -eq 1 ]
+			then
+				service gstreamer-autostart stop
+				echo "Keyboard connected. GStreamer stopped."
+				printf "\t Keyboard connected. GStreamer stopped.\n" >> $logFile
+			fi
+
+			camConnected=0
+			return
+		fi
+
 		if [ $camConnected -eq 0 ]
 		then
-			nowTime=$(date +"%T")
-			echo "Camera connected."
-			printf "%s Camera connected.\n" $nowTime >> $logFile
-
-			# Start the recording service
-			service camera-record start
-			echo "Recording started."
-			printf "%s Recording started.\n" $nowTime >> $logFile
-			
-			if [ $networkStatus -eq $Connected ]
-			then
-				service gstreamer-autostart start
-				nowTime=$(date +"%T")
-				echo "GStreamer started."
-				printf "%s Gstreamer started.\n" $nowTime >> $logFile
-
-			fi
+			# Camera has been connected - start gstreamer
+			service gstreamer-autostart start
+			echo "Camera connected and no keyboard detected. GStreamer started."
+			printf "\t Camera connected and no keyboard detected. GStreamer started.\n" >> $logFile
 		fi
 
 		camConnected=1
@@ -170,6 +183,7 @@ choose_connection_type()
 	while true
 	do
 		# Check if a camera is connected
+		update_keyboard_connected
 		check_camera_connected
 
 		if [ $hmiDetected -eq 0 ] && [ $lteNetworkSelected -eq 0 ];
@@ -255,11 +269,8 @@ choose_connection_type()
 					then
 						echo "LTE device is not available. Check the SIM card!"
 						printf "LTE device is not available. Check the SIM card!\n" >> $logFile
-						echo "Scanning for a preffered WIFI connection..."
-						printf "Scanning for a preffered WIFI connection...\n" >> $logFile
 						pref_wifi_con_count=0
 						lteNetworkSelected=0
-						hmiDetected=1
 					else
 						# LTE device is available - get the mobile connection name
 						mobileConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 gsm | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
@@ -313,6 +324,7 @@ network_connect()
 	while true
 	do
 		# Check if a camera is connected
+		update_keyboard_connected
 		check_camera_connected
 
 		echo "Attempting connection to" "$mobileConnectionName" "..."
@@ -380,6 +392,7 @@ network_disconnect()
 Disconnected=0
 Reconnecting=1
 Connected=2
+video_device=$(grep -i dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
 lteManufacturerName="U-Blox"
 wifiInterfaceName="wlan0"
 lteInterfaceName="usb1"
@@ -418,6 +431,15 @@ init_variables
 # Check if a keyboard is connected
 check_keyboard_connected
 
+# Start camera immediately if detected
+camDetected=$(ls /dev/* | grep $video_device)
+
+if [ ! -z "$camDetected" ] && [ -z "$hmiDetected" ];
+then
+	service gstreamer-autostart start
+	camConnected=1
+fi
+
 # Choose connection type (LTE or WIFI) and initialize the connection name and interface
 choose_connection_type
 
@@ -427,17 +449,18 @@ network_connect
 # Main watchdog loop
 while true
 do
-	# Check if a camera is connected
-	check_camera_connected
-
 	# Check if the mobile connection state is DOWN
 	if [ $wifiNetworkSelected -eq 1 ]
 	then
+		update_keyboard_connected
 		# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
 		mobileConnectionState=$(nmcli device | grep wifi | awk -F' ' '{print $3}' | grep "discon")
 	else
 		mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "discon")
 	fi
+
+	# Check if a camera is connected
+	check_camera_connected
 
 	if [ ! -z "$mobileConnectionState" ]
 	then
@@ -475,13 +498,14 @@ do
 				switch_to_RTL_mode_service_started=1
 			fi
 
-			if [ $camConnected -eq 1 ]
-			then
-				nowTime=$(date +"%T")
-				service gstreamer-autostart stop
-				echo "GStreamer stopped."
-				printf "%s GStreamer stopped.\n" $nowTime >> $logFile
-			fi
+			# TODO: If dynamic gstreamer pipeline is created signal it to stop the streaming branch
+			#if [ $camConnected -eq 1 ]
+			#then
+			#	nowTime=$(date +"%T")
+			#	service gstreamer-autostart stop
+			#	echo "GStreamer stopped."
+			#	printf "%s GStreamer stopped.\n" $nowTime >> $logFile
+			#fi
 
 			net_con_count=0
 
@@ -664,13 +688,14 @@ do
 					switch_to_RTL_mode_service_started=1
 				fi
 
-				if [ $camConnected -eq 1 ]
-				then
-					nowTime=$(date +"%T")
-					service gstreamer-autostart stop
-					echo "GStreamer stopped."
-					printf "%s GStreamer stopped.\n" $nowTime >> $logFile
-				fi
+				# TODO: If dynamic gstreamer pipeline is created signal it to stop the streaming branch
+				#if [ $camConnected -eq 1 ]
+				#then
+				#	nowTime=$(date +"%T")
+				#	service gstreamer-autostart stop
+				#	echo "GStreamer stopped."
+				#	printf "%s GStreamer stopped.\n" $nowTime >> $logFile
+				#fi
 
 				nowTime=$(date +"%T")
 				echo "Restarting the VPN service..."
@@ -734,13 +759,14 @@ do
 						networkStatus=$Reconnecting
 					fi
 					
-					if [ $camConnected -eq 1 ]
-					then
-						service gstreamer-autostart start
-						nowTime=$(date +"%T")
-						echo "GStreamer started."
-						printf "%s GStreamer started.\n" $nowTime >> $logFile
-					fi
+					# TODO: If dynamic gstreamer pipeline is created signal it to start the streaming branch 
+					#if [ $camConnected -eq 1 ]
+					#then
+					#	service gstreamer-autostart start
+					#	nowTime=$(date +"%T")
+					#	echo "GStreamer started."
+					#	printf "%s GStreamer started.\n" $nowTime >> $logFile
+					#fi
 				fi
 			else
 				nowTime=$(date +"%T")
