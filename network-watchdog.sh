@@ -454,9 +454,9 @@ do
 	then
 		update_keyboard_connected
 		# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
-		mobileConnectionState=$(nmcli device | grep wifi | awk -F' ' '{print $3}' | grep "discon")
+		mobileConnectionState=$(nmcli device | grep wifi | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 	else
-		mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "discon")
+		mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 	fi
 
 	# Check if a camera is connected
@@ -512,7 +512,7 @@ do
 			if [ $wifiNetworkSelected -eq 1 ]
 			then
 				echo "Attempting to switch to LTE connection mode..."
-				printf "\tAttempting to switch to LTE connection mode...\n" >> $logFile
+				printf "\t Attempting to switch to LTE connection mode...\n" >> $logFile
 			fi
 		fi
 
@@ -553,35 +553,35 @@ do
 				# LTE module is connected - get the associated device name
 				lteDeviceName=$(nmcli device | grep -m1 gsm | awk -F' ' '{print $1}')
 				echo "LTE module" "$lteManufacturerName" "connected. Getting device name..."
-				printf "\tLTE module %s connected. Getting device name...\n" "$lteManufacturerName" >> $logFile
+				printf "\t LTE module %s connected. Getting device name...\n" "$lteManufacturerName" >> $logFile
 
 				if [ -z "$lteDeviceName" ]
 				then
 					echo "Failed initializing LTE device name. Process restarting..."
-					printf "\tFailed initializing LTE device name. Process restarting...\n" >> $logFile
+					printf "\t Failed initializing LTE device name. Process restarting...\n" >> $logFile
 					sleep $samplingPeriodSec
 					continue
 				fi
 
 				echo "LTE module" "$lteManufacturerName" "connected. Device name:" "$lteDeviceName"
-				printf "\tLTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" >> $logFile
+				printf "\t LTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" >> $logFile
 
 				lteDeviceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "una")
 
 				if [ ! -z "$lteDeviceUnavailable" ]
 				then
 					echo "LTE device is not available. Check the SIM card!"
-					printf "\tLTE device is not available. Check the SIM card!\n" >> $logFile
+					printf "\t LTE device is not available. Check the SIM card!\n" >> $logFile
 				else
 					# LTE device is available - get the mobile connection name
 					mobileConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 gsm | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
 					echo "LTE interface name is set to" "$lteInterfaceName"
-					printf "\tLTE interface name is set to %s.\n" "$lteInterfaceName" >> $logFile
+					printf "\t LTE interface name is set to %s.\n" "$lteInterfaceName" >> $logFile
 					mobileInterfaceName=$lteInterfaceName
 					wifiNetworkSelected=0
 					lteNetworkSelected=1
 					echo "Preffered mobile connection" "$mobileConnectionName" "found!"
-					printf "\tPreffered mobile connection %s found!\n" "$mobileConnectionName" >> $logFile
+					printf "\t Preffered mobile connection %s found!\n" "$mobileConnectionName" >> $logFile
 					net_con_count=$max_net_con_count
 				fi
 			fi
@@ -602,13 +602,13 @@ do
 				if [ -z "$mobileIpAddress" ]
 				then
 					echo "Waiting for IP address..."
-					printf "Waiting for IP address...\n" >> $logFile
+					printf "\t Waiting for IP address...\n" >> $logFile
 					ip_address_wait_count=$((ip_address_wait_count+1))
 
 					if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 					then
 						echo "Waiting for IP address timeout. Disconnecting from network..."
-						printf "Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
+						printf "\t Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
 						network_disconnect
 						networkStatus=$Reconnecting
 					fi
@@ -619,7 +619,7 @@ do
 					# Switch the LTE interface name
 					mobileInterfaceName=$lteInterfaceNameAlt
 					echo "LTE interface name switched from" "$lteInterfaceName" "to" "$lteInterfaceNameAlt"
-					printf "\tLTE interface name switched from %s to %s.\n" "$lteInterfaceName" "$lteInterfaceNameAlt" >> $logFile
+					printf "\t LTE interface name switched from %s to %s.\n" "$lteInterfaceName" "$lteInterfaceNameAlt" >> $logFile
 
 					# Swap the main and alternative LTE interfaces 
 					lteInterfaceNameAlt=$lteInterfaceName
@@ -627,13 +627,13 @@ do
 				fi
 			else
 				echo "Waiting for IP address..."
-				printf "Waiting for IP address...\n" >> $logFile
+				printf "\t Waiting for IP address...\n" >> $logFile
 				ip_address_wait_count=$((ip_address_wait_count+1))
 
 				if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 				then
 					echo "Waiting for IP address timeout. Disconnecting from network..."
-					printf "Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
+					printf "\t Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
 					network_disconnect
 					networkStatus=$Reconnecting
 				fi
