@@ -518,6 +518,23 @@ do
 
 		# Check if a mobile network is available and connect to it
 		net_con_count=$((net_con_count+1))
+
+		if [ $wifiNetworkSelected -eq 1 ]
+		then
+			networkInterfaceUnavailable=$(nmcli device | grep wifi | awk -F' ' '{print $3}' | grep "unavail")
+		else
+			networkInterfaceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "unavail")
+		fi
+
+		if [ ! -z "$networkInterfaceUnavailable" ]
+		then
+			echo "Network interface unavailable!"
+			printf "\t Network interface unavailable!\n" >> $logFile
+			net_con_count=$max_net_con_count
+			sleep $samplingPeriodSec
+			continue
+		fi
+
 		if [ $net_con_count -gt $max_net_con_count ]
 		then
 			nowTime=$(date +"%T")
@@ -546,6 +563,8 @@ do
 		# If a wifi connection was selected then switch to LTE connection ------------------
 		if [ $wifiNetworkSelected -eq 1 ]
 		then
+			echo "Check if the LTE module is connected..."
+			printf "\t Check if the LTE module is connected...\n" >> $logFile
 			lteConnected=$(lsusb | grep -i "$lteManufacturerName")
 
 			if [ ! -z "$lteConnected" ]
@@ -584,6 +603,9 @@ do
 					printf "\t Preffered mobile connection %s found!\n" "$mobileConnectionName" >> $logFile
 					net_con_count=$max_net_con_count
 				fi
+			else
+				echo "LTE module is not connected!"
+				printf "\t LTE module is not connected!\n" >> $logFile
 			fi
 		fi
 		# ----------------------------------------------------------------------------------
