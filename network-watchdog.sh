@@ -207,7 +207,7 @@ choose_connection_type()
 
 			if [ $len -gt $((min_wifi_con_name_length-1)) ]
 			then
-				wifiConnectionFound=$(nmcli device wifi list | grep "$wifiConnectionName")
+				wifiConnectionFound=$(nmcli device wifi list | grep -w "$wifiConnectionName")
 				pref_wifi_con_count=0
 			else
 				pref_wifi_con_count=$((pref_wifi_con_count+1))
@@ -337,6 +337,15 @@ network_connect()
 
 			if [ $? -eq 0 ]
 			then
+				if [ "$wifiNetworkSelected" -eq 1 ]
+				then
+					# Update the wifi interface name
+					wifiInterfaceName=$(nmcli device | grep wifi | grep "$mobileConnectionName" | awk -F' ' '{print $1}')
+					mobileInterfaceName=$wifiInterfaceName
+					echo "Wifi interface set to $wifiInterfaceName"
+					printf "\t Wifi interface set to %s\n" $wifiInterfaceName >> $logFile
+				fi
+
 				printf "Connection successful! Synchronizing date and time...\n" >> $logFile
 				echo "Connection successful! Synchronizing date and time..."
 				timedatectl set-ntp off
@@ -454,7 +463,7 @@ do
 	then
 		update_keyboard_connected
 		# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
-		mobileConnectionState=$(nmcli device | grep wifi | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
+		mobileConnectionState=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 	else
 		mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 	fi
@@ -521,7 +530,7 @@ do
 
 		if [ $wifiNetworkSelected -eq 1 ]
 		then
-			networkInterfaceUnavailable=$(nmcli device | grep wifi | awk -F' ' '{print $3}' | grep "unavail")
+			networkInterfaceUnavailable=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep "unavail")
 		else
 			networkInterfaceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "unavail")
 		fi
@@ -667,6 +676,15 @@ do
 
 		if [ $networkStatus -eq $Disconnected ]
 		then
+			if [ "$wifiNetworkSelected" -eq 1 ]
+			then
+				# Update the wifi interface name
+				wifiInterfaceName=$(nmcli device | grep wifi | grep "$mobileConnectionName" | awk -F' ' '{print $1}')
+				mobileInterfaceName=$wifiInterfaceName
+				echo "Wifi interface set to $wifiInterfaceName"
+				printf "\t Wifi interface set to %s\n" $wifiInterfaceName >> $logFile
+			fi
+
 			nowTime=$(date +"%T")
 			echo "Network is now connected!" "Mobile IP:" "$mobileIpAddress"
 			echo "Starting the VPN service..."
