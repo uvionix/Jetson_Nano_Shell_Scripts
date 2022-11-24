@@ -5,7 +5,7 @@
 # The time period is in seconds.
 ##########################
 
-logFile="/home/network-watchdog.log"
+logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 
 sleep_count=$1
 

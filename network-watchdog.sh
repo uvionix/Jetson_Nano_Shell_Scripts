@@ -402,12 +402,12 @@ Disconnected=0
 Reconnecting=1
 Connected=2
 video_device=$(grep -i dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
-lteManufacturerName="U-Blox"
-wifiInterfaceName="wlan0"
+lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+wifiInterfaceName=$(grep -i "WIFI_INTERFACE_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 lteInterfaceName="usb1"
 lteInterfaceNameAlt="usb0"
 vpnInterfaceName="tun0"
-logFile="/var/log/uvx-network-watchdog.log"
+logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
@@ -528,22 +528,6 @@ do
 		# Check if a mobile network is available and connect to it
 		net_con_count=$((net_con_count+1))
 
-		if [ $wifiNetworkSelected -eq 1 ]
-		then
-			networkInterfaceUnavailable=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep "unavail")
-		else
-			networkInterfaceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "unavail")
-		fi
-
-		if [ ! -z "$networkInterfaceUnavailable" ]
-		then
-			echo "Network interface unavailable!"
-			printf "\t Network interface unavailable!\n" >> $logFile
-			net_con_count=$max_net_con_count
-			sleep $samplingPeriodSec
-			continue
-		fi
-
 		if [ $net_con_count -gt $max_net_con_count ]
 		then
 			nowTime=$(date +"%T")
@@ -616,6 +600,24 @@ do
 				echo "LTE module is not connected!"
 				printf "\t LTE module is not connected!\n" >> $logFile
 			fi
+		fi
+
+		if [ $wifiNetworkSelected -eq 1 ]
+		then
+			networkInterfaceUnavailable=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep "unavail")
+			networkInterfaceUnavailableName=$wifiInterfaceName
+		else
+			networkInterfaceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "unavail")
+			networkInterfaceUnavailableName=$lteDeviceName
+		fi
+
+		if [ ! -z "$networkInterfaceUnavailable" ]
+		then
+			echo "Network interface unavailable!"
+			printf "\t Network interface %s unavailable!\n" "$networkInterfaceUnavailableName" >> $logFile
+			net_con_count=$max_net_con_count
+			sleep $samplingPeriodSec
+			continue
 		fi
 		# ----------------------------------------------------------------------------------
 	else
