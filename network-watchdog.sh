@@ -18,6 +18,7 @@ init_variables()
 	vpn_con_count=0
 	net_con_count=0
 	ip_address_wait_count=0
+	ip_address_wait_timout_occured=0
 	pref_wifi_con_count=0
 	wifiNetworkSelected=0
 	lteNetworkSelected=0
@@ -395,6 +396,69 @@ network_disconnect()
 	done
 }
 
+# Process the event where the network was just disconnected
+process_network_just_disconnected()
+{
+	ip_address_wait_count=0
+	printf "%s Network disconnected!\n" $nowTime >> $logFile
+
+	# Stop the openvpn and MAVProxy services
+
+	echo "Stopping the VPN service..."
+	printf "%s Stopping the VPN service...\n" $nowTime >> $logFile
+	service openvpn-autostart stop
+
+	nowTime=$(date +"%T")
+	echo "Stopping MAVProxy..."
+	printf "%s Stopping MAVProxy...\n" $nowTime >> $logFile
+	service mavproxy-autostart stop
+	sleep 2
+	nowTime=$(date +"%T")
+		
+	if [ "$auto_switch_to_loiter" -eq "1" ]
+	then
+		echo "Switching to LOITER mode..."
+		printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
+		/usr/local/bin/chmod_offline.py loiter >> $logFile
+	else
+		echo "Auto switching to LOITER mode is disabled!"
+		printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime >> $logFile
+	fi
+			
+	nowTime=$(date +"%T")
+
+	if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
+	then
+		echo "Starting switch to RTL service..."
+		printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
+		service switch-to-rtl start
+		switch_to_RTL_mode_service_started=1
+	else
+		if [ "$auto_switch_to_rtl" -eq "0" ]
+		then
+			echo "Auto switching to RTL mode is disabled!"
+			printf "%s Auto switching to RTL mode is disabled!\n" $nowTime >> $logFile
+		fi
+	fi
+
+	# TODO: If dynamic gstreamer pipeline is created signal it to stop the streaming branch
+	#if [ $camConnected -eq 1 ]
+	#then
+	#	nowTime=$(date +"%T")
+	#	service gstreamer-autostart stop
+	#	echo "GStreamer stopped."
+	#	printf "%s GStreamer stopped.\n" $nowTime >> $logFile
+	#fi
+
+	net_con_count=0
+
+	if [ $wifiNetworkSelected -eq 1 ]
+	then
+		echo "Attempting to switch to LTE connection mode..."
+		printf "\t Attempting to switch to LTE connection mode...\n" >> $logFile
+	fi
+}
+
 ### MAIN SCRIPT STARTS HERE ###
 
 # SCRIPT PARAMETERS
@@ -492,7 +556,7 @@ do
 	# Check if a camera is connected
 	check_camera_connected
 
-	if [ ! -z "$mobileConnectionState" ] || [ -z "$interfaceListed" ];
+	if [ $ip_address_wait_timout_occured -eq 1 ] || [ ! -z "$mobileConnectionState" ] || [ -z "$interfaceListed" ];
 	then
 		# Mobile network is disconnected
 		nowTime=$(date +"%T")
@@ -500,64 +564,8 @@ do
 
 		if [ $networkStatus -ne $Disconnected ]
 		then
-			ip_address_wait_count=0
-			printf "%s Network disconnected!\n" $nowTime >> $logFile
-
-			# Stop the openvpn and MAVProxy services
 			networkStatus=$Disconnected
-			echo "Stopping the VPN service..."
-			printf "%s Stopping the VPN service...\n" $nowTime >> $logFile
-			service openvpn-autostart stop
-
-			nowTime=$(date +"%T")
-			echo "Stopping MAVProxy..."
-			printf "%s Stopping MAVProxy...\n" $nowTime >> $logFile
-			service mavproxy-autostart stop
-			sleep 2
-			nowTime=$(date +"%T")
-
-			if [ "$auto_switch_to_loiter" -eq "1" ]
-			then
-				echo "Switching to LOITER mode..."
-				printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
-				/usr/local/bin/chmod_offline.py loiter >> $logFile
-			else
-				echo "Auto switching to LOITER mode is disabled!"
-				printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime >> $logFile
-			fi
-			
-			nowTime=$(date +"%T")
-
-			if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
-			then
-				echo "Starting switch to RTL service..."
-				printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
-				service switch-to-rtl start
-				switch_to_RTL_mode_service_started=1
-			else
-				if [ "$auto_switch_to_rtl" -eq "0" ]
-				then
-					echo "Auto switching to RTL mode is disabled!"
-					printf "%s Auto switching to RTL mode is disabled!\n" $nowTime >> $logFile
-				fi
-			fi
-
-			# TODO: If dynamic gstreamer pipeline is created signal it to stop the streaming branch
-			#if [ $camConnected -eq 1 ]
-			#then
-			#	nowTime=$(date +"%T")
-			#	service gstreamer-autostart stop
-			#	echo "GStreamer stopped."
-			#	printf "%s GStreamer stopped.\n" $nowTime >> $logFile
-			#fi
-
-			net_con_count=0
-
-			if [ $wifiNetworkSelected -eq 1 ]
-			then
-				echo "Attempting to switch to LTE connection mode..."
-				printf "\t Attempting to switch to LTE connection mode...\n" >> $logFile
-			fi
+			process_network_just_disconnected
 		fi
 
 		# Check if a mobile network is available and connect to it
@@ -570,12 +578,13 @@ do
 			printf "%s Scanning for connection %s...\n" $nowTime "$mobileConnectionName" >> $logFile
 			connectionFound=$(nmcli connection | grep -i -o "$mobileConnectionName")
 
-			if [ ! -z "$connectionFound" ]
+			if [ ! -z "$connectionFound" ] && [ ! -z "$interfaceListed" ];
 			then
 				nowTime=$(date +"%T")
 				echo "Connetion" "$mobileConnectionName" "found. Attempting connection..."
 				printf "%s Connection %s found. Attempting connection...\n" $nowTime "$mobileConnectionName" >> $logFile
 				nmcli connection up "$mobileConnectionName"
+				ip_address_wait_timout_occured=0
 				net_con_count=0
 				sleep $samplingPeriodSec
 				continue
@@ -678,7 +687,9 @@ do
 						echo "Waiting for IP address timeout. Disconnecting from network..."
 						printf "\t Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
 						network_disconnect
-						networkStatus=$Reconnecting
+						process_network_just_disconnected
+						networkStatus=$Disconnected
+						ip_address_wait_timout_occured=1
 					fi
 
 					sleep $samplingPeriodSec
@@ -703,7 +714,9 @@ do
 					echo "Waiting for IP address timeout. Disconnecting from network..."
 					printf "\t Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
 					network_disconnect
-					networkStatus=$Reconnecting
+					process_network_just_disconnected
+					networkStatus=$Disconnected
+					ip_address_wait_timout_occured=1
 				fi
 
 				sleep $samplingPeriodSec
