@@ -408,6 +408,8 @@ lteInterfaceName="usb1"
 lteInterfaceNameAlt="usb0"
 vpnInterfaceName="tun0"
 logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
@@ -462,16 +464,35 @@ do
 	if [ $wifiNetworkSelected -eq 1 ]
 	then
 		update_keyboard_connected
-		# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
-		mobileConnectionState=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
+		
+		# Check if the mobile interface is listed
+		interfaceListed=$(nmcli device | grep "$wifiInterfaceName")
+		if [ -z "$interfaceListed" ]
+		then
+			mobileConnectionState=""
+			echo "Network interface unavailable!"
+			printf "\t Network interface %s unavailable!\n" "$wifiInterfaceName" >> $logFile
+		else
+			# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
+			mobileConnectionState=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
+		fi
 	else
-		mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
+		# Check if the mobile interface is listed
+		interfaceListed=$(nmcli device | grep "$lteDeviceName")
+		if [ -z "$interfaceListed" ]
+		then
+			mobileConnectionState=""
+			echo "Network interface unavailable!"
+			printf "\t Network interface %s unavailable!\n" "$lteDeviceName" >> $logFile
+		else
+			mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
+		fi
 	fi
 
 	# Check if a camera is connected
 	check_camera_connected
 
-	if [ ! -z "$mobileConnectionState" ]
+	if [ ! -z "$mobileConnectionState" ] || [ -z "$interfaceListed" ];
 	then
 		# Mobile network is disconnected
 		nowTime=$(date +"%T")
@@ -494,17 +515,31 @@ do
 			service mavproxy-autostart stop
 			sleep 2
 			nowTime=$(date +"%T")
-			echo "Switching to LOITER mode..."
-			printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
-			/usr/local/bin/chmod_offline.py loiter >> $logFile
-			
-			if [ $switch_to_RTL_mode_service_started -eq 0 ]
+
+			if [ "$auto_switch_to_loiter" -eq "1" ]
 			then
-				nowTime=$(date +"%T")
+				echo "Switching to LOITER mode..."
+				printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
+				/usr/local/bin/chmod_offline.py loiter >> $logFile
+			else
+				echo "Auto switching to LOITER mode is disabled!"
+				printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime >> $logFile
+			fi
+			
+			nowTime=$(date +"%T")
+
+			if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
+			then
 				echo "Starting switch to RTL service..."
 				printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
 				service switch-to-rtl start
 				switch_to_RTL_mode_service_started=1
+			else
+				if [ "$auto_switch_to_rtl" -eq "0" ]
+				then
+					echo "Auto switching to RTL mode is disabled!"
+					printf "%s Auto switching to RTL mode is disabled!\n" $nowTime >> $logFile
+				fi
 			fi
 
 			# TODO: If dynamic gstreamer pipeline is created signal it to stop the streaming branch
@@ -717,17 +752,31 @@ do
 				service mavproxy-autostart stop
 				sleep 2
 				nowTime=$(date +"%T")
-				echo "Switching to LOITER mode..."
-				printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
-				/usr/local/bin/chmod_offline.py loiter >> $logFile
 
-				if [ $switch_to_RTL_mode_service_started -eq 0 ]
+				if [ "$auto_switch_to_loiter" -eq "1" ]
 				then
-					nowTime=$(date +"%T")
+					echo "Switching to LOITER mode..."
+					printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
+					/usr/local/bin/chmod_offline.py loiter >> $logFile
+				else
+					echo "Auto switching to LOITER mode is disabled!"
+					printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime >> $logFile
+				fi
+
+				nowTime=$(date +"%T")
+
+				if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
+				then
 					echo "Starting switch to RTL service..."
 					printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
 					service switch-to-rtl start
 					switch_to_RTL_mode_service_started=1
+				else
+					if [ "$auto_switch_to_rtl" -eq "0" ]
+					then
+						echo "Auto switching to RTL mode is disabled!"
+						printf "%s Auto switching to RTL mode is disabled!\n" $nowTime >> $logFile
+					fi
 				fi
 
 				# TODO: If dynamic gstreamer pipeline is created signal it to stop the streaming branch
@@ -785,7 +834,7 @@ do
 						echo "MAVProxy started."
 						printf "%s MAVProxy started.\n" $nowTime >> $logFile
 
-						if [ $switch_to_RTL_mode_service_started -eq 1 ]
+						if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ "$auto_switch_to_rtl" -eq "1" ];
 						then
 							nowTime=$(date +"%T")
 							echo "Stopping switch to RTL service."
