@@ -135,9 +135,14 @@ logFile=$(grep -i "LOG_FILE" /etc/default/modem-watchdog-setup | awk -F'=' '{pri
 modemManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 pwr_en_gpio_offset=$(grep -i "PWR_EN_GPIO_OFFSET" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
 i2c_bus_identifier=$(grep -i "PWR_ON_OFF_I2C_BUS_IDENTIFIER" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
-samplingPeriodSec=2 # Time interval in which the modem status is re-evaluated, [sec]
-powerOnDelayTimeSec=20 # Power on delay after the power to the modem has been switched off, [sec]
-waitAfterPowerOnSec=15 # Wait time after the modem has been powered on before its status is re-evaluated, [sec]
+InitPowerOnDelayTimeSec=$(grep -i "PWR_ON_DELAY_SEC" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+InitWaitAfterPowerOnSec=$(grep -i "WAIT_AFTER_PWR_ON_SEC" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+waitTimeIncrementSec=$(grep -i "WAIT_INCREMENT_SEC" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+samplingPeriodSec=$(grep -i "SAMPLE_TIME_SEC" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+serviceStartDelaySec=$(grep -i "SERVICE_START_DELAY_SEC" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+powerOnDelayTimeSec=$InitPowerOnDelayTimeSec # Power on delay after the power to the modem has been switched off, [sec]
+waitAfterPowerOnSec=$InitWaitAfterPowerOnSec # Wait time after the modem has been powered on before its status is re-evaluated, [sec]
+lastPowerOnDelayTimeSec=$powerOnDelayTimeSec
 initializationSuccessful=0
 boolModemConnected=0
 boolStatusAquired=0
@@ -152,6 +157,7 @@ pwr_on_of_method=$PWR_ON_OFF_METHOD_I2C
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
 echo "Initializing..."
 printf "Initializing...\n" >> $logFile
+sleep $serviceStartDelaySec
 echo "Modem manufacturer name set to $modemManufacturerName"
 echo "Power enable GPIO offset set to $pwr_en_gpio_offset"
 printf "Modem manufacturer name set to %s\n" $modemManufacturerName >> $logFile
@@ -205,7 +211,10 @@ do
         if [ $boolModemConnected -eq 0 ]
         then
             boolModemConnected=1
-            printf "Modem connected! Waiting for status from modem manager...\n" >> $logFile
+            printf "Modem connected! Power on wait time = %d sec\n" $lastPowerOnDelayTimeSec >> $logFile
+            printf "Waiting for status from modem manager...\n" >> $logFile
+            powerOnDelayTimeSec=$InitPowerOnDelayTimeSec
+            waitAfterPowerOnSec=$InitWaitAfterPowerOnSec
         fi
 
         if [ -z "$modemPath" ]
@@ -229,7 +238,7 @@ do
         # Modem is not connected
         boolModemConnected=0
         boolStatusAquired=0
-        modemPath=$(mmcli -L | grep -i "$modemManufacturerName" | awk -F' ' '{print $1}')
+        modemPath=$(mmcli -L | grep -i "$modemManufacturerName" | awk -F' ' '{print $1}') # This line will empty the variable
         echo "Modem is not connected - attempting power cycle..."
         printf "Modem is not connected - attempting power cycle...\n" >> $logFile
         echo "Powering OFF..."
@@ -246,6 +255,9 @@ do
         sleep $waitAfterPowerOnSec
         echo "Now checking if the modem is connected..."
         printf "Now checking if the modem is connected...\n" >> $logFile
+        lastPowerOnDelayTimeSec=$powerOnDelayTimeSec
+        powerOnDelayTimeSec=$((powerOnDelayTimeSec+$waitTimeIncrementSec))
+        waitAfterPowerOnSec=$((waitAfterPowerOnSec+$waitTimeIncrementSec))
     fi
 
     sleep $samplingPeriodSec
