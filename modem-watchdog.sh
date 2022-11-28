@@ -231,7 +231,7 @@ do
                 printf "Modem connected! Modem model: %s; Modem path: %s\n" $modemModel $modemPath >> $logFile
             fi
 
-            modemStatus=$(mmcli -m $modemPath | grep -i -A3 "status" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g")
+            modemStatus=$(mmcli -m $modemPath | grep -i -m1 -A3 "state" | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g")
             echo $modemStatus >> $logFile
         fi
     else
