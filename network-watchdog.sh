@@ -82,7 +82,12 @@ check_camera_connected()
 			# Camera has been disconnected - stop gstreamer
 			service gstreamer-autostart stop
 			echo "Camera disconnected. GStreamer stopped."
-			printf "\t Camera disconnected. GStreamer stopped.\n" >> $logFile
+			if [ $logHistoryFileGenerated -eq 0 ]
+			then
+				printf "\t Camera disconnected. GStreamer stopped.\n" >> $logFile
+			else
+				printf "\t Camera disconnected. GStreamer stopped.\n" | tee -a $logFile $logHistoryFile > /dev/null
+			fi
 		fi
 
 		camConnected=0
@@ -95,7 +100,12 @@ check_camera_connected()
 			then
 				service gstreamer-autostart stop
 				echo "Keyboard connected. GStreamer stopped."
-				printf "\t Keyboard connected. GStreamer stopped.\n" >> $logFile
+				if [ $logHistoryFileGenerated -eq 0 ]
+				then
+					printf "\t Keyboard connected. GStreamer stopped.\n" >> $logFile
+				else
+					printf "\t Keyboard connected. GStreamer stopped.\n" | tee -a $logFile $logHistoryFile > /dev/null
+				fi
 			fi
 
 			camConnected=0
@@ -107,7 +117,12 @@ check_camera_connected()
 			# Camera has been connected - start gstreamer
 			service gstreamer-autostart start
 			echo "Camera connected and no keyboard detected. GStreamer started."
-			printf "\t Camera connected and no keyboard detected. GStreamer started.\n" >> $logFile
+			if [ $logHistoryFileGenerated -eq 0 ]
+			then
+				printf "\t Camera connected and no keyboard detected. GStreamer started.\n" >> $logFile
+			else
+				printf "\t Camera connected and no keyboard detected. GStreamer started.\n" | tee -a $logFile $logHistoryFile > /dev/null
+			fi
 		fi
 
 		camConnected=1
@@ -366,6 +381,18 @@ network_connect()
 				echo "Starting the VPN service..."
 				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
 				service openvpn-autostart start
+
+				# Generate the filepath for the log history file
+				mkdir -p $logHistoryDir
+				logHistoryFile=$logHistoryDir$(date +"%Y-%m-%d-%T")
+				logHistoryFileGenerated=1
+
+				# Copy the filepath to an interface file to be used by other scripts for logging
+				echo $logHistoryFile > $logHistoryFilepathContainer
+
+				# Create the log history file from the log file generated so far
+				# (from now on every log message is written to $logFile and $logHistoryFile)
+				cp $logFile $logHistoryFile
 				break
 			else
 				echo "Connection failed! Retrying..."
@@ -400,17 +427,17 @@ network_disconnect()
 process_network_just_disconnected()
 {
 	ip_address_wait_count=0
-	printf "%s Network disconnected!\n" $nowTime >> $logFile
+	printf "%s Network disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
 	# Stop the openvpn and MAVProxy services
 
 	echo "Stopping the VPN service..."
-	printf "%s Stopping the VPN service...\n" $nowTime >> $logFile
+	printf "%s Stopping the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 	service openvpn-autostart stop
 
 	nowTime=$(date +"%T")
 	echo "Stopping MAVProxy..."
-	printf "%s Stopping MAVProxy...\n" $nowTime >> $logFile
+	printf "%s Stopping MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 	service mavproxy-autostart stop
 	sleep 2
 	nowTime=$(date +"%T")
@@ -418,11 +445,11 @@ process_network_just_disconnected()
 	if [ "$auto_switch_to_loiter" -eq "1" ]
 	then
 		echo "Switching to LOITER mode..."
-		printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
-		/usr/local/bin/chmod_offline.py loiter >> $logFile
+		printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+		/usr/local/bin/chmod_offline.py loiter | tee -a $logFile $logHistoryFile > /dev/null
 	else
 		echo "Auto switching to LOITER mode is disabled!"
-		printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime >> $logFile
+		printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 	fi
 			
 	nowTime=$(date +"%T")
@@ -430,14 +457,14 @@ process_network_just_disconnected()
 	if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
 	then
 		echo "Starting switch to RTL service..."
-		printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
+		printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 		service switch-to-rtl start
 		switch_to_RTL_mode_service_started=1
 	else
 		if [ "$auto_switch_to_rtl" -eq "0" ]
 		then
 			echo "Auto switching to RTL mode is disabled!"
-			printf "%s Auto switching to RTL mode is disabled!\n" $nowTime >> $logFile
+			printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 		fi
 	fi
 
@@ -447,7 +474,7 @@ process_network_just_disconnected()
 	#	nowTime=$(date +"%T")
 	#	service gstreamer-autostart stop
 	#	echo "GStreamer stopped."
-	#	printf "%s GStreamer stopped.\n" $nowTime >> $logFile
+	#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 	#fi
 
 	net_con_count=0
@@ -455,7 +482,7 @@ process_network_just_disconnected()
 	if [ $wifiNetworkSelected -eq 1 ]
 	then
 		echo "Attempting to switch to LTE connection mode..."
-		printf "\t Attempting to switch to LTE connection mode...\n" >> $logFile
+		printf "\t Attempting to switch to LTE connection mode...\n" | tee -a $logFile $logHistoryFile > /dev/null
 	fi
 }
 
@@ -472,6 +499,8 @@ lteInterfaceName="usb1"
 lteInterfaceNameAlt="usb0"
 vpnInterfaceName="tun0"
 logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+logHistoryDir=$(grep -i "LOG_HISTORY_DIR" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
@@ -480,6 +509,8 @@ max_ip_address_wait_count=10 # Final value of the wait for IP address counter af
 max_pref_wifi_con_count=10 # Final value of the preffered wifi connection scan counter after which the mobile network is selected
 min_wifi_con_name_length=3 # Minimum number of characters in the WIFI connection name
 samplingPeriodSec=2 # Time interval in which the network status is re-evaluated, [sec]
+logHistoryFileGenerated=0
+logHistoryFile=""
 lteDeviceName=""
 mobileConnectionName=""
 mobileInterfaceName=""
@@ -535,7 +566,7 @@ do
 		then
 			mobileConnectionState=""
 			echo "Network interface unavailable!"
-			printf "\t Network interface %s unavailable!\n" "$wifiInterfaceName" >> $logFile
+			printf "\t Network interface %s unavailable!\n" "$wifiInterfaceName" | tee -a $logFile $logHistoryFile > /dev/null
 		else
 			# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
 			mobileConnectionState=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
@@ -547,7 +578,7 @@ do
 		then
 			mobileConnectionState=""
 			echo "Network interface unavailable!"
-			printf "\t Network interface %s unavailable!\n" "$lteDeviceName" >> $logFile
+			printf "\t Network interface %s unavailable!\n" "$lteDeviceName" | tee -a $logFile $logHistoryFile > /dev/null
 		else
 			mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 		fi
@@ -575,14 +606,14 @@ do
 		then
 			nowTime=$(date +"%T")
 			echo "Scanning for connection" "$mobileConnectionName" "..."
-			printf "%s Scanning for connection %s...\n" $nowTime "$mobileConnectionName" >> $logFile
+			printf "%s Scanning for connection %s...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
 			connectionFound=$(nmcli connection | grep -i -o "$mobileConnectionName")
 
 			if [ ! -z "$connectionFound" ] && [ ! -z "$interfaceListed" ];
 			then
 				nowTime=$(date +"%T")
 				echo "Connetion" "$mobileConnectionName" "found. Attempting connection..."
-				printf "%s Connection %s found. Attempting connection...\n" $nowTime "$mobileConnectionName" >> $logFile
+				printf "%s Connection %s found. Attempting connection...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
 				nmcli connection up "$mobileConnectionName"
 				ip_address_wait_timout_occured=0
 				net_con_count=0
@@ -591,7 +622,7 @@ do
 			else
 				nowTime=$(date +"%T")
 				echo "Connetion" "$mobileConnectionName" "not found. Retrying..."
-				printf "%s Connection %s not found. Retrying...\n" $nowTime "$mobileConnectionName" >> $logFile
+				printf "%s Connection %s not found. Retrying...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 
 			net_con_count=0
@@ -601,7 +632,7 @@ do
 		if [ $wifiNetworkSelected -eq 1 ]
 		then
 			echo "Check if the LTE module is connected..."
-			printf "\t Check if the LTE module is connected...\n" >> $logFile
+			printf "\t Check if the LTE module is connected...\n" | tee -a $logFile $logHistoryFile > /dev/null
 			lteConnected=$(lsusb | grep -i "$lteManufacturerName")
 
 			if [ ! -z "$lteConnected" ]
@@ -609,40 +640,40 @@ do
 				# LTE module is connected - get the associated device name
 				lteDeviceName=$(nmcli device | grep -m1 gsm | awk -F' ' '{print $1}')
 				echo "LTE module" "$lteManufacturerName" "connected. Getting device name..."
-				printf "\t LTE module %s connected. Getting device name...\n" "$lteManufacturerName" >> $logFile
+				printf "\t LTE module %s connected. Getting device name...\n" "$lteManufacturerName" | tee -a $logFile $logHistoryFile > /dev/null
 
 				if [ -z "$lteDeviceName" ]
 				then
 					echo "Failed initializing LTE device name. Process restarting..."
-					printf "\t Failed initializing LTE device name. Process restarting...\n" >> $logFile
+					printf "\t Failed initializing LTE device name. Process restarting...\n" | tee -a $logFile $logHistoryFile > /dev/null
 					sleep $samplingPeriodSec
 					continue
 				fi
 
 				echo "LTE module" "$lteManufacturerName" "connected. Device name:" "$lteDeviceName"
-				printf "\t LTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" >> $logFile
+				printf "\t LTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" | tee -a $logFile $logHistoryFile > /dev/null
 
 				lteDeviceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "una")
 
 				if [ ! -z "$lteDeviceUnavailable" ]
 				then
 					echo "LTE device is not available. Check the SIM card!"
-					printf "\t LTE device is not available. Check the SIM card!\n" >> $logFile
+					printf "\t LTE device is not available. Check the SIM card!\n" | tee -a $logFile $logHistoryFile > /dev/null
 				else
 					# LTE device is available - get the mobile connection name
 					mobileConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 gsm | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
 					echo "LTE interface name is set to" "$lteInterfaceName"
-					printf "\t LTE interface name is set to %s.\n" "$lteInterfaceName" >> $logFile
+					printf "\t LTE interface name is set to %s.\n" "$lteInterfaceName" | tee -a $logFile $logHistoryFile > /dev/null
 					mobileInterfaceName=$lteInterfaceName
 					wifiNetworkSelected=0
 					lteNetworkSelected=1
 					echo "Preffered mobile connection" "$mobileConnectionName" "found!"
-					printf "\t Preffered mobile connection %s found!\n" "$mobileConnectionName" >> $logFile
+					printf "\t Preffered mobile connection %s found!\n" "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
 					net_con_count=$max_net_con_count
 				fi
 			else
 				echo "LTE module is not connected!"
-				printf "\t LTE module is not connected!\n" >> $logFile
+				printf "\t LTE module is not connected!\n" | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 		fi
 
@@ -658,7 +689,7 @@ do
 		if [ ! -z "$networkInterfaceUnavailable" ]
 		then
 			echo "Network interface unavailable!"
-			printf "\t Network interface %s unavailable!\n" "$networkInterfaceUnavailableName" >> $logFile
+			printf "\t Network interface %s unavailable!\n" "$networkInterfaceUnavailableName" | tee -a $logFile $logHistoryFile > /dev/null
 			net_con_count=$max_net_con_count
 			sleep $samplingPeriodSec
 			continue
@@ -679,13 +710,13 @@ do
 				if [ -z "$mobileIpAddress" ]
 				then
 					echo "Waiting for IP address..."
-					printf "\t Waiting for IP address...\n" >> $logFile
+					printf "\t Waiting for IP address...\n" | tee -a $logFile $logHistoryFile > /dev/null
 					ip_address_wait_count=$((ip_address_wait_count+1))
 
 					if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 					then
 						echo "Waiting for IP address timeout. Disconnecting from network..."
-						printf "\t Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
+						printf "\t Waiting for IP address timeout. Disconnecting from network...\n" | tee -a $logFile $logHistoryFile > /dev/null
 						network_disconnect
 						process_network_just_disconnected
 						networkStatus=$Disconnected
@@ -698,7 +729,7 @@ do
 					# Switch the LTE interface name
 					mobileInterfaceName=$lteInterfaceNameAlt
 					echo "LTE interface name switched from" "$lteInterfaceName" "to" "$lteInterfaceNameAlt"
-					printf "\t LTE interface name switched from %s to %s.\n" "$lteInterfaceName" "$lteInterfaceNameAlt" >> $logFile
+					printf "\t LTE interface name switched from %s to %s.\n" "$lteInterfaceName" "$lteInterfaceNameAlt" | tee -a $logFile $logHistoryFile > /dev/null
 
 					# Swap the main and alternative LTE interfaces 
 					lteInterfaceNameAlt=$lteInterfaceName
@@ -706,13 +737,13 @@ do
 				fi
 			else
 				echo "Waiting for IP address..."
-				printf "\t Waiting for IP address...\n" >> $logFile
+				printf "\t Waiting for IP address...\n" | tee -a $logFile $logHistoryFile > /dev/null
 				ip_address_wait_count=$((ip_address_wait_count+1))
 
 				if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 				then
 					echo "Waiting for IP address timeout. Disconnecting from network..."
-					printf "\t Waiting for IP address timeout. Disconnecting from network...\n" >> $logFile
+					printf "\t Waiting for IP address timeout. Disconnecting from network...\n" | tee -a $logFile $logHistoryFile > /dev/null
 					network_disconnect
 					process_network_just_disconnected
 					networkStatus=$Disconnected
@@ -732,14 +763,14 @@ do
 				wifiInterfaceName=$(nmcli device | grep wifi | grep "$mobileConnectionName" | awk -F' ' '{print $1}')
 				mobileInterfaceName=$wifiInterfaceName
 				echo "Wifi interface set to $wifiInterfaceName"
-				printf "\t Wifi interface set to %s\n" $wifiInterfaceName >> $logFile
+				printf "\t Wifi interface set to %s\n" $wifiInterfaceName | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 
 			nowTime=$(date +"%T")
 			echo "Network is now connected!" "Mobile IP:" "$mobileIpAddress"
 			echo "Starting the VPN service..."
-			printf "%s Network is now connected! Mobile IP: %s\n" $nowTime $mobileIpAddress >> $logFile
-			printf "%s Starting the VPN service...\n" $nowTime >> $logFile
+			printf "%s Network is now connected! Mobile IP: %s\n" $nowTime $mobileIpAddress | tee -a $logFile $logHistoryFile > /dev/null
+			printf "%s Starting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
 			service openvpn-autostart start
 			networkStatus=$Reconnecting
@@ -760,7 +791,7 @@ do
 				networkStatus=$Reconnecting
 				echo "VPN connection lost."
 				echo "Stopping MAVProxy..."
-				printf "%s VPN connection lost. Stopping MAVProxy...\n" $nowTime >> $logFile
+				printf "%s VPN connection lost. Stopping MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
 				service mavproxy-autostart stop
 				sleep 2
@@ -769,11 +800,11 @@ do
 				if [ "$auto_switch_to_loiter" -eq "1" ]
 				then
 					echo "Switching to LOITER mode..."
-					printf "%s Switching to LOITER mode...\n" $nowTime >> $logFile
-					/usr/local/bin/chmod_offline.py loiter >> $logFile
+					printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+					/usr/local/bin/chmod_offline.py loiter | tee -a $logFile $logHistoryFile > /dev/null
 				else
 					echo "Auto switching to LOITER mode is disabled!"
-					printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime >> $logFile
+					printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				fi
 
 				nowTime=$(date +"%T")
@@ -781,14 +812,14 @@ do
 				if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
 				then
 					echo "Starting switch to RTL service..."
-					printf "%s Starting switch to RTL service...\n" $nowTime >> $logFile
+					printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 					service switch-to-rtl start
 					switch_to_RTL_mode_service_started=1
 				else
 					if [ "$auto_switch_to_rtl" -eq "0" ]
 					then
 						echo "Auto switching to RTL mode is disabled!"
-						printf "%s Auto switching to RTL mode is disabled!\n" $nowTime >> $logFile
+						printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 					fi
 				fi
 
@@ -798,12 +829,12 @@ do
 				#	nowTime=$(date +"%T")
 				#	service gstreamer-autostart stop
 				#	echo "GStreamer stopped."
-				#	printf "%s GStreamer stopped.\n" $nowTime >> $logFile
+				#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				#fi
 
 				nowTime=$(date +"%T")
 				echo "Restarting the VPN service..."
-				printf "%s Restarting the VPN service...\n" $nowTime >> $logFile
+				printf "%s Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				service openvpn-autostart stop
 				sleep 2
 				service openvpn-autostart start
@@ -817,7 +848,7 @@ do
 			then
 				nowTime=$(date +"%T")
 				echo "Restarting the VPN service..."
-				printf "%s Connection timeout. Restarting the VPN service...\n" $nowTime >> $logFile
+				printf "%s Connection timeout. Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				service openvpn-autostart stop
 				sleep 2
 				service openvpn-autostart start
@@ -835,30 +866,30 @@ do
 				if [ $networkStatus -ne $Connected ]
 				then
 					nowTime=$(date +"%T")
-					printf "%s VPN connected! VPN IP: %s Mobile IP: %s\n" $nowTime $vpnIpAddress $mobileIpAddress >> $logFile
+					printf "%s VPN connected! VPN IP: %s Mobile IP: %s\n" $nowTime $vpnIpAddress $mobileIpAddress | tee -a $logFile $logHistoryFile > /dev/null
 					networkStatus=$Connected
 					echo "Starting MAVProxy..."
-					printf "%s Starting MAVProxy...\n" $nowTime >> $logFile
+					printf "%s Starting MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 					service mavproxy-autostart start
 
 					if [ $? -eq 0 ]
 					then
 						nowTime=$(date +"%T")
 						echo "MAVProxy started."
-						printf "%s MAVProxy started.\n" $nowTime >> $logFile
+						printf "%s MAVProxy started.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
 						if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ "$auto_switch_to_rtl" -eq "1" ];
 						then
 							nowTime=$(date +"%T")
 							echo "Stopping switch to RTL service."
-							printf "%s Stopping switch to RTL service.\n" $nowTime >> $logFile
+							printf "%s Stopping switch to RTL service.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 							service switch-to-rtl stop
 							switch_to_RTL_mode_service_started=0
 						fi
 					else
 						nowTime=$(date +"%T")
 						echo "MAVProxy starting failed. Restarting..."
-						printf "%s MAVProxy starting failed. Restarting...\n" $nowTime >> $logFile
+						printf "%s MAVProxy starting failed. Restarting...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 						service mavproxy-autostart stop
 						networkStatus=$Reconnecting
 					fi
@@ -869,13 +900,13 @@ do
 					#	service gstreamer-autostart start
 					#	nowTime=$(date +"%T")
 					#	echo "GStreamer started."
-					#	printf "%s GStreamer started.\n" $nowTime >> $logFile
+					#	printf "%s GStreamer started.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 					#fi
 				fi
 			else
 				nowTime=$(date +"%T")
 				echo "Error! VPN connected but IP address invalid. Restarting the VPN service..."
-				printf "%s Error! VPN connected but IP address invalid. Restarting the VPN service...\n" $nowTime >> $logFile
+				printf "%s Error! VPN connected but IP address invalid. Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
 				# Restart the VPN service
 				service openvpn-autostart stop
