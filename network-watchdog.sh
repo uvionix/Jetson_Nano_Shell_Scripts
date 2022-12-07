@@ -382,6 +382,18 @@ network_connect()
 				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
 				service openvpn-autostart start
 
+				if [ $set_max_cpu_gpu_emc_clocks -eq 1 ]
+				then
+					# Set static max frequency to CPU, GPU and EMC clocks
+					nowTime=$(date +"%T")
+					echo "Setting static max frequency to CPU, GPU and EMC clocks..."
+					printf "%s Setting static max frequency to CPU, GPU and EMC clocks...\n" $nowTime >> $logFile
+					jetson_clocks
+				else
+					echo "Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!"
+					printf "Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!\n" >> $logFile
+				fi
+
 				# Generate the filepath for the log history file
 				mkdir -p $logHistoryDir
 				logHistoryFile=$logHistoryDir$(date +"%Y-%m-%d-%T")
@@ -503,6 +515,7 @@ logHistoryDir=$(grep -i "LOG_HISTORY_DIR" /etc/default/network-watchdog-setup | 
 logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+set_max_cpu_gpu_emc_clocks=$(grep -i "SET_MAX_CPU_GPU_EMC_CLOCKS" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
@@ -572,6 +585,20 @@ do
 			mobileConnectionState=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 		fi
 	else
+		# Update the mobile interface device name in case it has changed if the module has been restarted by the modem watchdog service
+		lteDeviceTypeGSM=$(nmcli device | grep -m1 -i "gsm")
+		if [ ! -z "$lteDeviceTypeGSM" ]
+		then
+			lteDeviceNameNew=$(nmcli device | grep -m1 -i "gsm" | awk -F' ' '{print $1}')
+
+			if [ "$lteDeviceName" != "$lteDeviceNameNew" ]
+			then
+				lteDeviceName=$lteDeviceNameNew
+				echo "LTE device name changed to $lteDeviceName!"
+				printf "\t LTE device name changed to %s!\n" "$lteDeviceName" | tee -a $logFile $logHistoryFile > /dev/null
+			fi
+		fi
+
 		# Check if the mobile interface is listed
 		interfaceListed=$(nmcli device | grep "$lteDeviceName")
 		if [ -z "$interfaceListed" ]
