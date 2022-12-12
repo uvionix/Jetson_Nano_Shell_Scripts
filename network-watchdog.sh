@@ -48,6 +48,12 @@ check_keyboard_connected()
 
 	echo "Keyboard not detected. LTE connection type is selected."
 	printf "Keyboard not detected. LTE connection type is selected.\n" >> $logFile
+
+	if [ $disable_wifi_if_lte_net_selected -eq 1 ]
+	then
+		disable_wifi
+	fi
+
 	sleep 20
 }
 
@@ -498,6 +504,69 @@ process_network_just_disconnected()
 	fi
 }
 
+# Disable WIFI via GPIO
+disable_wifi()
+{
+	echo "Disabling WIFI..."
+	printf "Disabling WIFI...\n" >> $logFile
+
+	# Get the GPIO base value
+	gpio_base=$(cat /sys/kernel/debug/gpio | grep gpiochip0 | awk -F' ' '{print $3}' | awk -F'-' '{print $1}')
+
+	# Calculate the number of the wifi disable GPIO
+	wifi_disable_gpio=$((gpio_base+$wifi_disable_gpio_offset))
+
+	# Export the GPIO if it is not exported
+	regular_gpioNumber="gpio$wifi_disable_gpio"
+	gpio_exported=$(ls /sys/class/gpio/ | grep "$regular_gpioNumber" )
+
+	if [ -z "$gpio_exported" ]
+	then
+		echo $wifi_disable_gpio > /sys/class/gpio/export
+	fi
+
+	if [ $? -eq 0 ]
+	then
+		wifi_disable_cnt=0
+
+		while true
+		do
+			if [ "$wifi_disable_cnt" -gt "$max_wifi_disable_cnt" ]
+			then
+				echo "WIFI disable failed!"
+				printf "WIFI disable failed!\n" >> $logFile
+				break
+			fi
+
+			# Get the current GPIO value
+			gpio_curr_value=$(cat /sys/class/gpio/$regular_gpioNumber/value)
+
+			if [ $gpio_curr_value -eq 1 ]
+			then
+				echo "WIFI successfully disabled!"
+				printf "WIFI successfully disabled!\n" >> $logFile
+				break
+			else
+				configured_direction_out=$(cat /sys/class/gpio/$regular_gpioNumber/direction | grep "out")
+
+				if [ -z "$configured_direction_out" ]
+				then
+					echo out > /sys/class/gpio/$regular_gpioNumber/direction
+				else
+					echo 1 > /sys/class/gpio/$regular_gpioNumber/value
+				fi
+
+				sleep $samplingPeriodSec
+			fi
+
+			wifi_disable_cnt=$((wifi_disable_cnt+1))
+		done
+	else
+		echo "WIFI disable failed!"
+		printf "WIFI disable failed!\n" >> $logFile
+	fi
+}
+
 ### MAIN SCRIPT STARTS HERE ###
 
 # SCRIPT PARAMETERS
@@ -507,6 +576,8 @@ Connected=2
 video_device=$(grep -i dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
 lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 wifiInterfaceName=$(grep -i "WIFI_INTERFACE_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+wifi_disable_gpio_offset=$(grep -i "WIFI_DISABLE_GPIO_OFFSET" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+disable_wifi_if_lte_net_selected=$(grep -i "DISABLE_WIFI_IF_LTE_NETWORK_IS_SELECTED" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 lteInterfaceName="usb1"
 lteInterfaceNameAlt="usb0"
 vpnInterfaceName="tun0"
@@ -521,6 +592,7 @@ max_vpn_con_count=15 # Final value of the VPN network connection counter after w
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
 max_pref_wifi_con_count=10 # Final value of the preffered wifi connection scan counter after which the mobile network is selected
 min_wifi_con_name_length=3 # Minimum number of characters in the WIFI connection name
+max_wifi_disable_cnt=10 # Final value of the wifi disable count after which wifi disable attemts are canceled
 samplingPeriodSec=2 # Time interval in which the network status is re-evaluated, [sec]
 logHistoryFileGenerated=0
 logHistoryFile=""
