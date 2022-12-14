@@ -164,9 +164,7 @@ printf "Modem manufacturer name set to %s\n" $modemManufacturerName >> $logFile
 printf "Power enable GPIO offset set to %s\n" $pwr_en_gpio_offset >> $logFile
 
 # Get the GPIO base value
-echo "Getting GPIO base value..."
-printf "Getting GPIO base value...\n" >> $logFile
-gpio_base=$(cat /sys/kernel/debug/gpio | grep gpiochip0 | awk -F' ' '{print $3}' | awk -F'-' '{print $1}')
+gpio_base=$(grep -i "GPIO_BASE" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
 echo "GPIO base value set to $gpio_base"
 printf "GPIO base value set to %s\n" $gpio_base >> $logFile
 
@@ -176,25 +174,17 @@ echo "Modem power enable GPIO sysfs value set to $modem_pwr_en_gpio"
 printf "Modem power enable GPIO sysfs value set to %s\n" $modem_pwr_en_gpio >> $logFile
 
 # Check if the modem power enable GPIO is configured is an I2C mux GPIO
-modem_pwr_en_gpio_as_i2c_mux=$(cat /sys/kernel/debug/gpio | grep "gpio-$modem_pwr_en_gpio" | grep "i2c-mux-gpio")
-if [ ! -z "$modem_pwr_en_gpio_as_i2c_mux" ]
+modem_pwr_en_gpio_as_i2c_mux=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+
+if [ $modem_pwr_en_gpio_as_i2c_mux -eq 1 ]
 then
     echo "Modem power enable GPIO is configured as an I2C mux GPIO! Initializing related parameters..."
     printf "Modem power enable GPIO is configured as an I2C mux GPIO! Initializing related parameters...\n" >> $logFile
     initialize_case_i2c_mux_pwr_en_gpio
 else
-    # Check if the modem power enable GPIO is configured is a regular GPIO
-    modem_pwr_en_gpio_as_regular_GPIO=$(cat /sys/kernel/debug/gpio | grep "gpio-$modem_pwr_en_gpio" | grep "GPIO06")
-    if [ ! -z "$modem_pwr_en_gpio_as_regular_GPIO" ]
-    then
-        echo "Modem power enable GPIO is configured as a regular GPIO!"
-        printf "Modem power enable GPIO is configured as a regular GPIO!\n" >> $logFile
-        initialize_case_regular_pwr_en_gpio
-    else
-        echo "Unknown modem power enable GPIO configuration! Attempting initialization with regular GPIO configuration..."
-        printf "Unknown modem power enable GPIO configuration! Attempting initialization with regular GPIO configuration...\n" >> $logFile
-        initialize_case_regular_pwr_en_gpio
-    fi
+    echo "Unknown modem power enable GPIO configuration! Attempting initialization with regular GPIO configuration..."
+    printf "Unknown modem power enable GPIO configuration! Attempting initialization with regular GPIO configuration...\n" >> $logFile
+    initialize_case_regular_pwr_en_gpio
 fi
 
 # Main watchdog loop
