@@ -1016,5 +1016,8 @@ do
 		fi
 	fi
 
+	# Copy the current log file within the XOSS webpage root directory
+	cp $logFile /var/www/html/network-watchdog
+
 	sleep $samplingPeriodSec
 done

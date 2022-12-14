@@ -260,5 +260,9 @@ do
         waitAfterPowerOnSec=$((waitAfterPowerOnSec+$waitTimeIncrementSec))
     fi
 
+    # Copy the current log file within the XOSS webpage root directory
+    cp $logFile /var/www/html/modem-watchdog
+    tail -1 $logFile > /var/www/html/modem-latest-status
+
     sleep $samplingPeriodSec
 done
