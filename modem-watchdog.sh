@@ -163,6 +163,20 @@ echo "Power enable GPIO offset set to $pwr_en_gpio_offset"
 printf "Modem manufacturer name set to %s\n" $modemManufacturerName >> $logFile
 printf "Power enable GPIO offset set to %s\n" $pwr_en_gpio_offset >> $logFile
 
+# Check if the GPIO base value has already been configured - if not configure it
+gpio_base_configured=$(grep -i "GPIO_BASE" /etc/default/modem-watchdog-setup)
+if [ -z "$gpio_base_configured" ]
+then
+    echo "Configuring GPIO_BASE by examining the file /sys/kernel/debug/gpio ..."
+    printf "Configuring GPIO_BASE by examining the file /sys/kernel/debug/gpio ...\n" >> $logFile
+
+    # Read the GPIO base value by examining the file /sys/kernel/debug/gpio
+    gpio_base=$(cat /sys/kernel/debug/gpio | grep gpiochip0 | awk -F' ' '{print $3}' | awk -F'-' '{print $1}')
+
+    # Write the GPIO base value in the modem watchdog setup file
+    echo "GPIO_BASE=$gpio_base" | tee -a /etc/default/modem-watchdog-setup > /dev/null
+fi
+
 # Get the GPIO base value
 gpio_base=$(grep -i "GPIO_BASE" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
 echo "GPIO base value set to $gpio_base"
@@ -172,6 +186,26 @@ printf "GPIO base value set to %s\n" $gpio_base >> $logFile
 modem_pwr_en_gpio=$((gpio_base+$pwr_en_gpio_offset))
 echo "Modem power enable GPIO sysfs value set to $modem_pwr_en_gpio"
 printf "Modem power enable GPIO sysfs value set to %s\n" $modem_pwr_en_gpio >> $logFile
+
+# Check if the modem power enable type has already been configured - if not configure it
+modem_power_enable_type_configured=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup)
+if [ -z "$modem_power_enable_type_configured" ]
+then
+    echo "Configuring the modem power enable GPIO configuration type by examining the file /sys/kernel/debug/gpio ..."
+    printf "Configuring the modem power enable GPIO configuration type by examining the file /sys/kernel/debug/gpio ...\n" >> $logFile
+
+    # Determine if the modem power enable is configured as an I2C mux GPIO by examining the file /sys/kernel/debug/gpio
+    pwr_en_gpio_as_i2c_mux=$(cat /sys/kernel/debug/gpio | grep "gpio-$modem_pwr_en_gpio" | grep "i2c-mux-gpio")
+
+    if [ ! -z "$pwr_en_gpio_as_i2c_mux" ]
+    then
+        # The modem power enable is configured as an I2C mux GPIO
+        echo "MODEM_PWR_EN_GPIO_AS_I2C_MUX=1" | tee -a /etc/default/modem-watchdog-setup > /dev/null
+    else
+        # The modem power enable is configured as a regular GPIO or in some other way
+        echo "MODEM_PWR_EN_GPIO_AS_I2C_MUX=0" | tee -a /etc/default/modem-watchdog-setup > /dev/null
+    fi
+fi
 
 # Check if the modem power enable GPIO is configured is an I2C mux GPIO
 modem_pwr_en_gpio_as_i2c_mux=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
