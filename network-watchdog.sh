@@ -456,6 +456,7 @@ process_network_just_disconnected()
 	nowTime=$(date +"%T")
 	echo "Stopping MAVProxy..."
 	printf "%s Stopping MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+	service update-uav-latest-status stop
 	service mavproxy-autostart stop
 	sleep 2
 	nowTime=$(date +"%T")
@@ -892,6 +893,7 @@ do
 				echo "Stopping MAVProxy..."
 				printf "%s VPN connection lost. Stopping MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
+				service update-uav-latest-status stop
 				service mavproxy-autostart stop
 				sleep 2
 				nowTime=$(date +"%T")
@@ -985,6 +987,11 @@ do
 							service switch-to-rtl stop
 							switch_to_RTL_mode_service_started=0
 						fi
+
+						service update-uav-latest-status start
+						nowTime=$(date +"%T")
+						echo "Started UAV status update service."
+						printf "%s Started UAV status update service.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 					else
 						nowTime=$(date +"%T")
 						echo "MAVProxy starting failed. Restarting..."
