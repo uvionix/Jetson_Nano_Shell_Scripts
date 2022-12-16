@@ -10,6 +10,9 @@ service network-watchdog stop
 echo "Stopping the VPN service..."
 service openvpn-autostart stop
 
+echo "Stopping the UAV status update service..."
+service update-uav-latest-status stop
+
 echo "Stopping MAVProxy..."
 service mavproxy-autostart stop
 
