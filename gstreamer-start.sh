@@ -3,8 +3,11 @@
 # Setup file
 setup_file="/etc/default/gstreamer-setup"
 
+# Log file
+logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+
 # Get the capture device parameter
-capture_dev=$(grep -i dev $setup_file | awk -F'"' '{print $2}')
+capture_dev=$(grep -i capture_dev $setup_file | awk -F'"' '{print $2}')
 
 # Get the input pixel format
 in_pix_fmt=$(grep -i in_pix_fmt $setup_file | awk -F'"' '{print $2}')
@@ -34,7 +37,13 @@ rec_res_width=$(grep -i rec_res_w $setup_file | awk -F'"' '{print $2}')
 rec_res_height=$(grep -i rec_res_h $setup_file | awk -F'"' '{print $2}')
 
 # Get the split file duration parameter
-rec_split_duration=$(grep -i rec_split_dur $setup_file | awk -F'"' '{print $2}')
+rec_split_duration=$(grep -i rec_split_dur_ns $setup_file | awk -F'"' '{print $2}')
+
+# Get the split file size parameter
+rec_split_file_size_bytes=$(grep -i rec_file_size_bytes $setup_file | awk -F'"' '{print $2}')
+
+# Get the reserve storage space parameter
+free_space_reserve_bytes=$(grep -i free_space_rsrv_bytes $setup_file | awk -F'"' '{print $2}')
 
 # Get the host IP address
 host_ip=$(grep -i host_ip $setup_file | awk -F'"' '{print $2}')
@@ -42,7 +51,7 @@ host_ip=$(grep -i host_ip $setup_file | awk -F'"' '{print $2}')
 # Get the host port
 host_port=$(grep -i host_port $setup_file | awk -F'"' '{print $2}')
 
-# Get the max resolution parameters
+# Calculate the max resolution parameters
 if [ $disp_res_height -gt $rec_res_height ]
 then
 	max_res_width=$disp_res_width
@@ -59,54 +68,82 @@ then
     stream_res_height=$max_res_height
 fi
 
-# Get a username
-usr=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
+# Get the storage device
+disk=$(lsblk --output 'NAME','TYPE' | grep -B1 -w part | grep -w disk | awk -F' ' {'print $1'})
+part=$(lsblk --output 'NAME','MOUNTPOINT' | grep $disk | grep -w / | awk -F"$disk" {'print $2'} | awk -F' ' {'print $1'})
+storage_device=$disk$part
+printf "\t Storage device initialized to %s\n" $storage_device >> $logFile
 
-# Get the current date
-nowDate=$(date +"%b-%d-%y")
+# Get the available disk space in kilobytes and recalculate it in bytes
+free_space_kB=$(df --block-size=1K --output='source','avail' | grep /dev/$storage_device | awk -F' ' {'print $2'})
+free_space_bytes=$((free_space_kB*1024-$free_space_reserve_bytes))
 
-# Create the Videos directory if it does not exist
-mkdir /home/$usr/Videos
-chown $usr /home/$usr/Videos
-
-# Create the xoss directory if it does not exist
-mkdir /home/$usr/Videos/xoss
-chown $usr /home/$usr/Videos/xoss
-
-# Create a directory for the current date if it does not exist
-mkdir /home/$usr/Videos/xoss/$nowDate
-chown $usr /home/$usr/Videos/xoss/$nowDate
-
-# Create a subdirectory for the current session
-sub_dir_name=1
-dircontents=$(ls /home/$usr/Videos/xoss/$nowDate/)
-
-if [ -z "$dircontents" ]
+if [ $free_space_bytes -le 0 ]
 then
-    # Root date directory is empty - create a subdirectory for the first session
-    recdir="/home/$usr/Videos/xoss/$nowDate/$sub_dir_name"
-    mkdir $recdir
+    max_files=0
 else
-    # Root date directory is not empty - get a subdirectory name for the current session
-    while true
-    do
-        dir_exists=$(ls /home/$usr/Videos/xoss/$nowDate/ | grep $sub_dir_name)
-
-        if [ -z "$dir_exists" ]
-        then
-            recdir="/home/$usr/Videos/xoss/$nowDate/$sub_dir_name"
-            mkdir $recdir
-            break
-        else
-            sub_dir_name=$((sub_dir_name+1))
-        fi
-    done
+    printf "\t Free space available for video recording = %d bytes\n" $free_space_bytes >> $logFile
+    # Calculate the max number of files that can be recorded
+    max_files=$((free_space_bytes/$rec_split_file_size_bytes))
 fi
 
-chown $usr $recdir
+if [ $max_files -gt 1 ]
+then
+    printf "\t Maximum number of files that can be recorded = $d\n" $max_files >> $logFile
 
-# Construct a filename for the video recording
-filename="S$sub_dir_name-V%d"
+    # Get a username
+    usr=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
 
-# Start the gstreamer pipeline
-/usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt" ! queue ! nvv4l2h264enc qp-range=$rec_qp_range ! h264parse ! splitmuxsink location=$recdir/$filename.mkv max-size-time=$rec_split_duration muxer=matroskamux t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink sync=false
+    # Get the current date
+    nowDate=$(date +"%b-%d-%y")
+
+    # Create the Videos directory if it does not exist
+    mkdir /home/$usr/Videos
+    chown $usr /home/$usr/Videos
+
+    # Create the xoss directory if it does not exist
+    mkdir /home/$usr/Videos/xoss
+    chown $usr /home/$usr/Videos/xoss
+
+    # Create a directory for the current date if it does not exist
+    mkdir /home/$usr/Videos/xoss/$nowDate
+    chown $usr /home/$usr/Videos/xoss/$nowDate
+
+    # Create a subdirectory for the current session
+    sub_dir_name=1
+    dircontents=$(ls /home/$usr/Videos/xoss/$nowDate/)
+
+    if [ -z "$dircontents" ]
+    then
+        # Root date directory is empty - create a subdirectory for the first session
+        recdir="/home/$usr/Videos/xoss/$nowDate/$sub_dir_name"
+        mkdir $recdir
+    else
+        # Root date directory is not empty - get a subdirectory name for the current session
+        while true
+        do
+            dir_exists=$(ls /home/$usr/Videos/xoss/$nowDate/ | grep $sub_dir_name)
+
+            if [ -z "$dir_exists" ]
+            then
+                recdir="/home/$usr/Videos/xoss/$nowDate/$sub_dir_name"
+                mkdir $recdir
+                break
+            else
+                sub_dir_name=$((sub_dir_name+1))
+            fi
+        done
+    fi
+
+    chown $usr $recdir
+
+    # Construct a filename for the video recording
+    filename="S$sub_dir_name-V%d"
+
+    # Start the gstreamer pipeline
+    /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt" ! queue ! nvv4l2h264enc qp-range=$rec_qp_range ! h264parse ! splitmuxsink location=$recdir/$filename.mkv max-size-time=$rec_split_duration max-size-bytes=$rec_split_file_size_bytes max-files=$max_files async-finalize=true muxer=matroskamux t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink sync=false
+else
+    printf "\t Not enough disk space available for recording!\n" >> $logFile
+    printf "\t Starting pipeline for streaming and visualization...\n" >> $logFile
+    /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink sync=false
+fi

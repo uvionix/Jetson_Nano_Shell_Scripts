@@ -574,7 +574,7 @@ disable_wifi()
 Disconnected=0
 Reconnecting=1
 Connected=2
-video_device=$(grep -i dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
+video_device=$(grep -i capture_dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
 lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 wifiInterfaceName=$(grep -i "WIFI_INTERFACE_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 wifi_disable_gpio_offset=$(grep -i "WIFI_DISABLE_GPIO_OFFSET" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
@@ -628,6 +628,8 @@ camDetected=$(ls /dev/* | grep $video_device)
 
 if [ ! -z "$camDetected" ] && [ -z "$hmiDetected" ];
 then
+	echo "Camera connected. Starting gstreamer..."
+	printf "Camera connected. Starting gstreamer...\n" >> $logFile
 	service gstreamer-autostart start
 	camConnected=1
 fi
