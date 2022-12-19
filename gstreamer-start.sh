@@ -89,7 +89,7 @@ fi
 
 if [ $max_files -gt 1 ]
 then
-    printf "\t Maximum number of files that can be recorded = $d\n" $max_files >> $logFile
+    printf "\t Maximum number of files that can be recorded = %d\n" $max_files >> $logFile
 
     # Get a username
     usr=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
