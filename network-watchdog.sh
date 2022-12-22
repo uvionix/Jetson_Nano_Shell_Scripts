@@ -25,6 +25,7 @@ init_variables()
 	switch_to_RTL_mode_service_started=0
 	hmiDetected=0
 	camConnected=0
+	camera_and_lte_connections_probed=0
 }
 
 # Check if a keyboard is connected
@@ -120,6 +121,12 @@ check_camera_connected()
 
 		if [ $camConnected -eq 0 ]
 		then
+			if [ $camera_and_lte_connections_probed -eq 0 ]
+			then
+				probe_camera_and_lte_connections
+				camera_and_lte_connections_probed=1
+			fi
+
 			# Camera has been connected - start gstreamer
 			service gstreamer-autostart start
 			echo "Camera connected and no keyboard detected. GStreamer started."
@@ -309,7 +316,7 @@ choose_connection_type()
 					fi
 				else
 					# LTE module is not connected
-					if [ "$hmiDetected" -eq 1 ]
+					if [ $hmiDetected -eq 1 ]
 					then
 						echo "LTE module is not connected. Scanning for a preffered WIFI connection..."
 						printf "LTE module is not connected. Scanning for a preffered WIFI connection...\n" >> $logFile
@@ -359,7 +366,7 @@ network_connect()
 
 			if [ $? -eq 0 ]
 			then
-				if [ "$wifiNetworkSelected" -eq 1 ]
+				if [ $wifiNetworkSelected -eq 1 ]
 				then
 					# Update the wifi interface name
 					wifiInterfaceName=$(nmcli device | grep wifi | grep "$mobileConnectionName" | awk -F' ' '{print $1}')
@@ -384,10 +391,6 @@ network_connect()
 				printf "%s Checking MAVProxy prerequisites...\n" $nowTime >> $logFile
 				check_mavproxy_prerequisites
 
-				echo "Starting the VPN service..."
-				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
-				service openvpn-autostart start
-
 				if [ $set_max_cpu_gpu_emc_clocks -eq 1 ]
 				then
 					# Set static max frequency to CPU, GPU and EMC clocks
@@ -399,6 +402,10 @@ network_connect()
 					echo "Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!"
 					printf "Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!\n" >> $logFile
 				fi
+
+				echo "Starting the VPN service..."
+				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
+				service openvpn-autostart start
 
 				# Generate the filepath for the log history file
 				mkdir -p $logHistoryDir
@@ -447,7 +454,7 @@ process_network_just_disconnected()
 	ip_address_wait_count=0
 	printf "%s Network disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
-	# Stop the openvpn and MAVProxy services
+	# Stop the VPN and MAVProxy services
 
 	echo "Stopping the VPN service..."
 	printf "%s Stopping the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
@@ -461,7 +468,7 @@ process_network_just_disconnected()
 	sleep 2
 	nowTime=$(date +"%T")
 		
-	if [ "$auto_switch_to_loiter" -eq "1" ]
+	if [ $auto_switch_to_loiter -eq 1 ]
 	then
 		echo "Switching to LOITER mode..."
 		printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
@@ -473,14 +480,14 @@ process_network_just_disconnected()
 			
 	nowTime=$(date +"%T")
 
-	if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
+	if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $auto_switch_to_rtl -eq 1 ];
 	then
 		echo "Starting switch to RTL service..."
 		printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 		service switch-to-rtl start
 		switch_to_RTL_mode_service_started=1
 	else
-		if [ "$auto_switch_to_rtl" -eq "0" ]
+		if [ $auto_switch_to_rtl -eq 0 ]
 		then
 			echo "Auto switching to RTL mode is disabled!"
 			printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
@@ -508,11 +515,24 @@ process_network_just_disconnected()
 # Disable WIFI via GPIO
 disable_wifi()
 {
-	echo "Disabling WIFI..."
-	printf "Disabling WIFI...\n" >> $logFile
+	echo "Disabling WIFI..." | tee -a $logFile
+
+	# Check if the GPIO base value has already been configured - if not configure it
+	gpio_base_configured=$(grep -i "GPIO_BASE" /etc/default/network-watchdog-setup)
+	if [ -z "$gpio_base_configured" ]
+	then
+    	echo "Configuring GPIO_BASE by examining the file /sys/kernel/debug/gpio ..." | tee -a $logFile
+
+    	# Read the GPIO base value by examining the file /sys/kernel/debug/gpio
+    	gpio_base=$(cat /sys/kernel/debug/gpio | grep gpiochip0 | awk -F' ' '{print $3}' | awk -F'-' '{print $1}')
+
+    	# Write the GPIO base value in the network watchdog setup file
+    	echo "GPIO_BASE=$gpio_base" | tee -a /etc/default/network-watchdog-setup > /dev/null
+	fi
 
 	# Get the GPIO base value
-	gpio_base=$(cat /sys/kernel/debug/gpio | grep gpiochip0 | awk -F' ' '{print $3}' | awk -F'-' '{print $1}')
+	gpio_base=$(grep -i "GPIO_BASE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+	echo "GPIO base value set to $gpio_base" | tee -a $logFile
 
 	# Calculate the number of the wifi disable GPIO
 	wifi_disable_gpio=$((gpio_base+$wifi_disable_gpio_offset))
@@ -532,10 +552,9 @@ disable_wifi()
 
 		while true
 		do
-			if [ "$wifi_disable_cnt" -gt "$max_wifi_disable_cnt" ]
+			if [ $wifi_disable_cnt -gt $max_wifi_disable_cnt ]
 			then
-				echo "WIFI disable failed!"
-				printf "WIFI disable failed!\n" >> $logFile
+				echo "WIFI disable failed!" | tee -a $logFile
 				break
 			fi
 
@@ -544,8 +563,7 @@ disable_wifi()
 
 			if [ $gpio_curr_value -eq 1 ]
 			then
-				echo "WIFI successfully disabled!"
-				printf "WIFI successfully disabled!\n" >> $logFile
+				echo "WIFI successfully disabled!" | tee -a $logFile
 				break
 			else
 				configured_direction_out=$(cat /sys/class/gpio/$regular_gpioNumber/direction | grep "out")
@@ -563,9 +581,90 @@ disable_wifi()
 			wifi_disable_cnt=$((wifi_disable_cnt+1))
 		done
 	else
-		echo "WIFI disable failed!"
-		printf "WIFI disable failed!\n" >> $logFile
+		echo "WIFI disable failed!" | tee -a $logFile
 	fi
+}
+
+# Probe camera and LTE connections
+probe_camera_and_lte_connections()
+{
+	lte_disconnected_after_cam_probing=0
+	lte_wait_disconnected_cnt=0
+	lte_max_wait_disconnected_cnt=10
+
+	# Wait until the LTE module is connected
+	echo "Waiting until the LTE module is connected..." | tee -a $logFile
+	while true
+	do
+    	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+
+    	if [ ! -z "$lteConnected" ]
+    	then
+        	break
+    	fi
+
+    	sleep $samplingPeriodSec
+	done
+
+	# LTE module is connected - probe the camera connection
+	echo "LTE module is connected. Probing the camera connection..." | tee -a $logFile
+	sleep 20
+	service gstreamer-camera-probe start
+
+	# Wait to see if the LTE module will be disconnected as a result of the camera probing
+	echo "Waiting to see if the LTE module will be disconnected as a result of the camera probing..." | tee -a $logFile
+	while true
+	do
+    	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+
+    	if [ -z "$lteConnected" ]
+    	then
+			echo "LTE module disconnected!" | tee -a $logFile
+			lte_disconnected_after_cam_probing=1
+        	break
+    	fi
+
+    	lte_wait_disconnected_cnt=$((lte_wait_disconnected_cnt+1))
+
+    	if [ $lte_wait_disconnected_cnt -gt $lte_max_wait_disconnected_cnt ]
+    	then
+			echo "Wait timeout! LTE is still connected." | tee -a $logFile
+        	break
+    	fi
+
+    	sleep $samplingPeriodSec
+	done
+
+	# Stop camera probing
+	echo "Stopping camera probing..." | tee -a $logFile
+	service gstreamer-camera-probe stop
+
+	if [ $lte_disconnected_after_cam_probing -eq 0 ]
+	then
+		return
+	fi
+
+	# Wait until the LTE module is reconnected
+	echo "Waiting until the LTE module is reconnected..." | tee -a $logFile
+	while true
+	do
+    	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+
+    	if [ ! -z "$lteConnected" ]
+    	then
+			# LTE module is connected. Wait for device name...
+			lteDeviceName=$(nmcli device | grep -m1 gsm | awk -F' ' '{print $1}')
+			if [ ! -z "$lteDeviceName" ]
+			then
+				break
+			fi
+    	fi
+
+    	sleep $samplingPeriodSec
+	done
+
+	echo "LTE module is reconnected!" | tee -a $logFile
+	#sleep 10
 }
 
 ### MAIN SCRIPT STARTS HERE ###
@@ -595,6 +694,7 @@ max_pref_wifi_con_count=10 # Final value of the preffered wifi connection scan c
 min_wifi_con_name_length=3 # Minimum number of characters in the WIFI connection name
 max_wifi_disable_cnt=10 # Final value of the wifi disable count after which wifi disable attemts are canceled
 samplingPeriodSec=2 # Time interval in which the network status is re-evaluated, [sec]
+camera_and_lte_connections_probed=0
 logHistoryFileGenerated=0
 logHistoryFile=""
 lteDeviceName=""
@@ -626,10 +726,11 @@ check_keyboard_connected
 # Start camera immediately if detected
 camDetected=$(ls /dev/* | grep $video_device)
 
-if [ ! -z "$camDetected" ] && [ -z "$hmiDetected" ];
+if [ ! -z "$camDetected" ] && [ $hmiDetected -eq 0 ];
 then
-	echo "Camera connected. Starting gstreamer..."
-	printf "Camera connected. Starting gstreamer...\n" >> $logFile
+	probe_camera_and_lte_connections
+	camera_and_lte_connections_probed=1
+	echo "Camera connected. Starting gstreamer..." | tee -a $logFile
 	service gstreamer-autostart start
 	camConnected=1
 fi
@@ -859,7 +960,7 @@ do
 
 		if [ $networkStatus -eq $Disconnected ]
 		then
-			if [ "$wifiNetworkSelected" -eq 1 ]
+			if [ $wifiNetworkSelected -eq 1 ]
 			then
 				# Update the wifi interface name
 				wifiInterfaceName=$(nmcli device | grep wifi | grep "$mobileConnectionName" | awk -F' ' '{print $1}')
@@ -900,7 +1001,7 @@ do
 				sleep 2
 				nowTime=$(date +"%T")
 
-				if [ "$auto_switch_to_loiter" -eq "1" ]
+				if [ $auto_switch_to_loiter -eq 1 ]
 				then
 					echo "Switching to LOITER mode..."
 					printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
@@ -912,14 +1013,14 @@ do
 
 				nowTime=$(date +"%T")
 
-				if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ "$auto_switch_to_rtl" -eq "1" ];
+				if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $auto_switch_to_rtl -eq 1 ];
 				then
 					echo "Starting switch to RTL service..."
 					printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 					service switch-to-rtl start
 					switch_to_RTL_mode_service_started=1
 				else
-					if [ "$auto_switch_to_rtl" -eq "0" ]
+					if [ $auto_switch_to_rtl -eq 0 ]
 					then
 						echo "Auto switching to RTL mode is disabled!"
 						printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
@@ -962,7 +1063,7 @@ do
 			oct1=$(ip address show | grep -A2 $vpnInterfaceName | grep "inet " | awk -F' ' '{print $2}' | awk -F'.' '{print $1}')
 			oct2=$(ip address show | grep -A2 $vpnInterfaceName | grep "inet " | awk -F' ' '{print $2}' | awk -F'.' '{print $2}')
 
-			if [ "$oct1" -eq "192" ] && [ "$oct2" -eq "168" ];
+			if [ $oct1 -eq 192 ] && [ $oct2 -eq 168 ];
 			then
 				echo "VPN connected!" "VPN IP:" "$vpnIpAddress" "Mobile IP:" "$mobileIpAddress"
 
@@ -981,7 +1082,7 @@ do
 						echo "MAVProxy started."
 						printf "%s MAVProxy started.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 
-						if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ "$auto_switch_to_rtl" -eq "1" ];
+						if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ $auto_switch_to_rtl -eq 1 ];
 						then
 							nowTime=$(date +"%T")
 							echo "Stopping switch to RTL service."
