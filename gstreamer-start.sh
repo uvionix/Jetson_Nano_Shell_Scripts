@@ -15,6 +15,9 @@ in_pix_fmt=$(grep -i in_pix_fmt $setup_file | awk -F'"' '{print $2}')
 # Get the output pixel format
 out_pix_fmt=$(grep -i out_pix_fmt $setup_file | awk -F'"' '{print $2}')
 
+# Get the streaming enabled flag
+streaming_enabled=$(grep -i streaming_enabled $setup_file | awk -F'"' '{print $2}')
+
 # Get the streaming qp range
 stream_qp_range=$(grep -i stream_qp_range $setup_file | awk -F'"' '{print $2}')
 
@@ -78,55 +81,55 @@ printf "\t Storage device initialized to %s\n" $storage_device >> $logFile
 free_space_kB=$(df --block-size=1K --output='source','avail' | grep /dev/$storage_device | awk -F' ' {'print $2'})
 free_space_bytes=$((free_space_kB*1024-$free_space_reserve_bytes))
 
+# Calculate the max number of files that can be recorded
 if [ $free_space_bytes -le 0 ]
 then
     max_files=0
 else
     printf "\t Free space available for video recording = %d bytes\n" $free_space_bytes >> $logFile
-    # Calculate the max number of files that can be recorded
     max_files=$((free_space_bytes/$rec_split_file_size_bytes))
 fi
 
 if [ $max_files -gt 1 ]
 then
-    printf "\t Maximum number of files that can be recorded = $d\n" $max_files >> $logFile
+    printf "\t Maximum number of files that can be recorded = %d\n" $max_files >> $logFile
 
     # Get a username
-    usr=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
+    usrname=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
 
     # Get the current date
     nowDate=$(date +"%b-%d-%y")
 
     # Create the Videos directory if it does not exist
-    mkdir /home/$usr/Videos
-    chown $usr /home/$usr/Videos
+    mkdir /home/$usrname/Videos
+    chown $usrname /home/$usrname/Videos
 
     # Create the xoss directory if it does not exist
-    mkdir /home/$usr/Videos/xoss
-    chown $usr /home/$usr/Videos/xoss
+    mkdir /home/$usrname/Videos/xoss
+    chown $usrname /home/$usrname/Videos/xoss
 
     # Create a directory for the current date if it does not exist
-    mkdir /home/$usr/Videos/xoss/$nowDate
-    chown $usr /home/$usr/Videos/xoss/$nowDate
+    mkdir /home/$usrname/Videos/xoss/$nowDate
+    chown $usrname /home/$usrname/Videos/xoss/$nowDate
 
     # Create a subdirectory for the current session
     sub_dir_name=1
-    dircontents=$(ls /home/$usr/Videos/xoss/$nowDate/)
+    dircontents=$(ls /home/$usrname/Videos/xoss/$nowDate/)
 
     if [ -z "$dircontents" ]
     then
         # Root date directory is empty - create a subdirectory for the first session
-        recdir="/home/$usr/Videos/xoss/$nowDate/$sub_dir_name"
+        recdir="/home/$usrname/Videos/xoss/$nowDate/$sub_dir_name"
         mkdir $recdir
     else
         # Root date directory is not empty - get a subdirectory name for the current session
         while true
         do
-            dir_exists=$(ls /home/$usr/Videos/xoss/$nowDate/ | grep $sub_dir_name)
+            dir_exists=$(ls /home/$usrname/Videos/xoss/$nowDate/ | grep $sub_dir_name)
 
             if [ -z "$dir_exists" ]
             then
-                recdir="/home/$usr/Videos/xoss/$nowDate/$sub_dir_name"
+                recdir="/home/$usrname/Videos/xoss/$nowDate/$sub_dir_name"
                 mkdir $recdir
                 break
             else
@@ -135,15 +138,43 @@ then
         done
     fi
 
-    chown $usr $recdir
+    chown $usrname $recdir
 
     # Construct a filename for the video recording
     filename="S$sub_dir_name-V%d"
 
     # Start the gstreamer pipeline
-    /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt" ! queue ! nvv4l2h264enc qp-range=$rec_qp_range ! h264parse ! splitmuxsink location=$recdir/$filename.mkv max-size-time=$rec_split_duration max-size-bytes=$rec_split_file_size_bytes max-files=$max_files async-finalize=true muxer=matroskamux t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink sync=false
+    if [ $streaming_enabled -eq 1 ]
+    then
+        printf "\t Starting pipeline for streaming, recording and visualization...\n" >> $logFile
+        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+        ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false \
+        t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$rec_qp_range ! h264parse ! splitmuxsink location=$recdir/$filename.mp4 max-size-bytes=$rec_split_file_size_bytes max-files=$max_files muxer=mp4mux \
+        t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
+    else
+        printf "\t Streaming is disabled. Starting pipeline for recording and visualization...\n" >> $logFile
+        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+        ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$rec_qp_range ! h264parse ! splitmuxsink location=$recdir/$filename.mp4 max-size-bytes=$rec_split_file_size_bytes max-files=$max_files muxer=mp4mux \
+        t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
+    fi
+
+    # The next pipeline specifies the bitrate and the framerate in the recording branch
+    #/usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+    #! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false \
+    #t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt, framerate=(fraction)65/1" ! nvv4l2h264enc bitrate=100000000 ! h264parse ! splitmuxsink location=$recdir/$filename.mp4 max-size-bytes=$rec_split_file_size_bytes max-files=$max_files muxer=mp4mux \
+    #t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
 else
     printf "\t Not enough disk space available for recording!\n" >> $logFile
-    printf "\t Starting pipeline for streaming and visualization...\n" >> $logFile
-    /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink sync=false
+    
+    if [ $streaming_enabled -eq 1 ]
+    then
+        printf "\t Starting pipeline for streaming and visualization...\n" >> $logFile
+        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+        ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false \
+        t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
+    else
+        printf "\t Streaming is disabled. Starting pipeline for visualization...\n" >> $logFile
+        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" \
+        ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
+    fi
 fi
