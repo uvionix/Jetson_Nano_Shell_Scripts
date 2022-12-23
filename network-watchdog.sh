@@ -403,10 +403,6 @@ network_connect()
 					printf "Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!\n" >> $logFile
 				fi
 
-				echo "Starting the VPN service..."
-				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
-				service openvpn-autostart start
-
 				# Generate the filepath for the log history file
 				mkdir -p $logHistoryDir
 				logHistoryFile=$logHistoryDir$(date +"%Y-%m-%d-%T")
@@ -414,6 +410,24 @@ network_connect()
 
 				# Copy the filepath to an interface file to be used by other scripts for logging
 				echo $logHistoryFile > $logHistoryFilepathContainer
+
+				# Update the VPN configuration file
+				nowTime=$(date +"%T")
+				ovpn_config_file=$(find /etc/openvpn/ -iname *.ovpn)
+				if [ -z "$ovpn_config_file" ]
+				then
+					echo "The directory /etc/openvpn/ does not contain a VPN configuration file. Aborting."
+					printf "%s The directory /etc/openvpn/ does not contain a VPN configuration file. Aborting.\n" $nowTime >> $logFile
+					cp $logFile $logHistoryFile
+					exit 0
+				fi
+
+				echo "#PATH TO THE OPENVPN CONFIGURATION FILE" > /etc/default/openvpn-setup
+				echo CONFIG_FILE_PATH=\"$ovpn_config_file\" >> /etc/default/openvpn-setup
+				echo "Starting the VPN service..."
+				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
+				printf "\t VPN configuration file set to %s\n" $ovpn_config_file >> $logFile
+				service openvpn-autostart start
 
 				# Create the log history file from the log file generated so far
 				# (from now on every log message is written to $logFile and $logHistoryFile)
@@ -767,7 +781,7 @@ do
 		then
 			lteDeviceNameNew=$(nmcli device | grep -m1 -i "gsm" | awk -F' ' '{print $1}')
 
-			if [ "$lteDeviceName" != "$lteDeviceNameNew" ]
+			if [ ! -z "$lteDeviceNameNew" ] && [ "$lteDeviceName" != "$lteDeviceNameNew" ];
 			then
 				lteDeviceName=$lteDeviceNameNew
 				echo "LTE device name changed to $lteDeviceName!"
