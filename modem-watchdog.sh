@@ -45,6 +45,16 @@ initialize_case_regular_pwr_en_gpio()
                     printf "GPIO %s was configured as output successfuly! Initialization successful!\n" $modem_pwr_en_gpio >> $logFile
                     initializationSuccessful=1
                     pwr_on_of_method=$PWR_ON_OFF_METHOD_REGULAR_GPIO
+
+                    gpio_value=$(cat /sys/class/gpio/$regular_gpioNumber/value)
+                    if [ $gpio_value -eq 0 ]
+                    then
+                        echo "Modem power is disabled. Powering ON..."
+                        printf "Modem power is disabled. Powering ON...\n" >> $logFile
+                        echo 1 > /sys/class/gpio/$regular_gpioNumber/value
+                        sleep $waitAfterPowerOnSec
+                    fi
+
                     break
                 else
                     echo "Configuring GPIO $modem_pwr_en_gpio as output failed! Retrying..."
