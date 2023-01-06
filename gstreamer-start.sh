@@ -6,6 +6,18 @@ setup_file="/etc/default/gstreamer-setup"
 # Log file
 logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 
+# Get the vehicle armed/disarmed status
+armedDisarmedStatusFile=$(grep -i "VEHICLE_ARMED_DISARMED_STATUS_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+vehicle_armed=$(grep -i -w "armed" $armedDisarmedStatusFile)
+if [ -z "$vehicle_armed" ]
+then
+    # Vehicle is disarmed - recording is disabled
+    recording_enabled=0
+else
+    # Vehicle is armed - recording is enabled
+    recording_enabled=1
+fi
+
 # Get the capture device parameter
 capture_dev=$(grep -i capture_dev $setup_file | awk -F'"' '{print $2}')
 
@@ -71,26 +83,31 @@ then
     stream_res_height=$max_res_height
 fi
 
-# Get the storage device
-disk=$(lsblk --output 'NAME','TYPE' | grep -B1 -w part | grep -w disk | awk -F' ' {'print $1'})
-part=$(lsblk --output 'NAME','MOUNTPOINT' | grep $disk | grep -w / | awk -F"$disk" {'print $2'} | awk -F' ' {'print $1'})
-storage_device=$disk$part
-printf "\t Storage device initialized to %s\n" $storage_device >> $logFile
-
-# Get the available disk space in kilobytes and recalculate it in bytes
-free_space_kB=$(df --block-size=1K --output='source','avail' | grep /dev/$storage_device | awk -F' ' {'print $2'})
-free_space_bytes=$((free_space_kB*1024-$free_space_reserve_bytes))
-
-# Calculate the max number of files that can be recorded
-if [ $free_space_bytes -le 0 ]
+if [ $recording_enabled -eq 1 ]
 then
-    max_files=0
+    # Get the storage device
+    disk=$(lsblk --output 'NAME','TYPE' | grep -B1 -w part | grep -w disk | awk -F' ' {'print $1'})
+    part=$(lsblk --output 'NAME','MOUNTPOINT' | grep $disk | grep -w / | awk -F"$disk" {'print $2'} | awk -F' ' {'print $1'})
+    storage_device=$disk$part
+    printf "\t Storage device initialized to %s\n" $storage_device >> $logFile
+
+    # Get the available disk space in kilobytes and recalculate it in bytes
+    free_space_kB=$(df --block-size=1K --output='source','avail' | grep /dev/$storage_device | awk -F' ' {'print $2'})
+    free_space_bytes=$((free_space_kB*1024-$free_space_reserve_bytes))
+
+    # Calculate the max number of files that can be recorded
+    if [ $free_space_bytes -le 0 ]
+    then
+        max_files=0
+    else
+        printf "\t Free space available for video recording = %d bytes\n" $free_space_bytes >> $logFile
+        max_files=$((free_space_bytes/$rec_split_file_size_bytes))
+    fi
 else
-    printf "\t Free space available for video recording = %d bytes\n" $free_space_bytes >> $logFile
-    max_files=$((free_space_bytes/$rec_split_file_size_bytes))
+    max_files=0
 fi
 
-if [ $max_files -gt 1 ]
+if [ $recording_enabled -eq 1 ] && [ $max_files -gt 1 ];
 then
     printf "\t Maximum number of files that can be recorded = %d\n" $max_files >> $logFile
 
@@ -147,34 +164,39 @@ then
     if [ $streaming_enabled -eq 1 ]
     then
         printf "\t Starting pipeline for streaming, recording and visualization...\n" >> $logFile
-        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+        /usr/bin/gst-launch-1.0 -e v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
         ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false \
         t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$rec_qp_range ! h264parse ! splitmuxsink location=$recdir/$filename.mp4 max-size-bytes=$rec_split_file_size_bytes max-files=$max_files muxer=mp4mux \
         t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
     else
         printf "\t Streaming is disabled. Starting pipeline for recording and visualization...\n" >> $logFile
-        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+        /usr/bin/gst-launch-1.0 -e v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
         ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$rec_qp_range ! h264parse ! splitmuxsink location=$recdir/$filename.mp4 max-size-bytes=$rec_split_file_size_bytes max-files=$max_files muxer=mp4mux \
         t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
     fi
 
     # The next pipeline specifies the bitrate and the framerate in the recording branch
-    #/usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+    #/usr/bin/gst-launch-1.0 -e v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
     #! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false \
     #t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$rec_res_width, height=(int)$rec_res_height, format=(string)$out_pix_fmt, framerate=(fraction)65/1" ! nvv4l2h264enc bitrate=100000000 ! h264parse ! splitmuxsink location=$recdir/$filename.mp4 max-size-bytes=$rec_split_file_size_bytes max-files=$max_files muxer=mp4mux \
     #t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
 else
-    printf "\t Not enough disk space available for recording!\n" >> $logFile
+    if [ $recording_enabled -eq 1 ]
+    then
+        printf "\t Not enough disk space available for recording!\n" >> $logFile
+    else
+        printf "\t Recording is disabled while the vehicle is disarmed!\n" >> $logFile
+    fi
     
     if [ $streaming_enabled -eq 1 ]
     then
         printf "\t Starting pipeline for streaming and visualization...\n" >> $logFile
-        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
+        /usr/bin/gst-launch-1.0 -e v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! tee name=t \
         ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvv4l2h264enc qp-range=$stream_qp_range ! rtph264pay mtu=$stream_mtu config-interval=-1 ! udpsink clients=$host_ip:$host_port sync=false \
         t. ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
     else
         printf "\t Streaming is disabled. Starting pipeline for visualization...\n" >> $logFile
-        /usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" \
+        /usr/bin/gst-launch-1.0 -e v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" \
         ! queue ! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$disp_res_width, height=(int)$disp_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$disp_res_width overlay-h=$disp_res_height sync=false
     fi
 fi

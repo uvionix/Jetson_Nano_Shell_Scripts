@@ -25,7 +25,6 @@ init_variables()
 	switch_to_RTL_mode_service_started=0
 	hmiDetected=0
 	camConnected=0
-	camera_and_lte_connections_probed=0
 }
 
 # Check if a keyboard is connected
@@ -76,10 +75,18 @@ update_keyboard_connected()
 	done
 }
 
+# Stop the gstreamer service
+service_gstreamer_stop()
+{
+	/usr/bin/killall -2 gst-launch-1.0
+	service gstreamer-autostart stop
+}
+
 # Check if a camera is connected
 check_camera_connected()
 {
 	camDetected=$(ls /dev/* | grep $video_device)
+	vehicle_armed=$(grep -i -w "armed" $armedDisarmedStatusFile)
 
 	if [ -z "$camDetected" ]
 	then
@@ -87,7 +94,7 @@ check_camera_connected()
 		if [ $camConnected -eq 1 ]
 		then
 			# Camera has been disconnected - stop gstreamer
-			service gstreamer-autostart stop
+			service_gstreamer_stop
 			echo "Camera disconnected. GStreamer stopped."
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
@@ -105,7 +112,7 @@ check_camera_connected()
 			# Keyboard has been detected - stop gstreamer if started
 			if [ $camConnected -eq 1 ]
 			then
-				service gstreamer-autostart stop
+				service_gstreamer_stop
 				echo "Keyboard connected. GStreamer stopped."
 				if [ $logHistoryFileGenerated -eq 0 ]
 				then
@@ -138,8 +145,31 @@ check_camera_connected()
 			fi
 		fi
 
+		# Check the vehicle armed/disarmed status
+		if [ $camConnected -eq 1 ] && [ "$prev_vehicle_armed" != "$vehicle_armed" ];
+		then
+			echo "Vehicle armed status has changed! Restarting gstreamer..."
+			if [ -z "$vehicle_armed" ]
+			then
+				armed_status="DISARMED"
+			else
+				armed_status="ARMED"
+			fi
+
+			if [ $logHistoryFileGenerated -eq 0 ]
+			then
+				printf "\t Vehicle status has changed to %s! Restarting gstreamer...\n" $armed_status >> $logFile
+			else
+				printf "\t Vehicle status has changed to %s! Restarting gstreamer...\n" $armed_status | tee -a $logFile $logHistoryFile > /dev/null
+			fi
+
+			service gstreamer-autostart reload
+		fi
+
 		camConnected=1
 	fi
+
+	prev_vehicle_armed=$vehicle_armed
 }
 
 # Check the prerequisites for starting MAVProxy
@@ -512,7 +542,7 @@ process_network_just_disconnected()
 	#if [ $camConnected -eq 1 ]
 	#then
 	#	nowTime=$(date +"%T")
-	#	service gstreamer-autostart stop
+	#	service_gstreamer_stop
 	#	echo "GStreamer stopped."
 	#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 	#fi
@@ -701,6 +731,7 @@ logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" /etc/defa
 auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 set_max_cpu_gpu_emc_clocks=$(grep -i "SET_MAX_CPU_GPU_EMC_CLOCKS" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+armedDisarmedStatusFile=$(grep -i "VEHICLE_ARMED_DISARMED_STATUS_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
@@ -708,12 +739,13 @@ max_pref_wifi_con_count=10 # Final value of the preffered wifi connection scan c
 min_wifi_con_name_length=3 # Minimum number of characters in the WIFI connection name
 max_wifi_disable_cnt=10 # Final value of the wifi disable count after which wifi disable attemts are canceled
 samplingPeriodSec=2 # Time interval in which the network status is re-evaluated, [sec]
-camera_and_lte_connections_probed=0
 logHistoryFileGenerated=0
 logHistoryFile=""
 lteDeviceName=""
 mobileConnectionName=""
 mobileInterfaceName=""
+vehicle_armed=""
+prev_vehicle_armed=""
 networkStatus=0
 vpn_con_count=0
 net_con_count=0
@@ -725,6 +757,32 @@ switch_to_RTL_mode_service_started=0
 hmiDetected=0
 camConnected=0
 schedule_reboot=0
+
+# Check if the modem power enable type has been configured
+modem_power_enable_type_configured=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup)
+if [ -z "$modem_power_enable_type_configured" ]
+then
+	camera_and_lte_connections_probed=0
+else
+	# Check if the modem power enable GPIO is configured is an I2C mux GPIO
+	modem_pwr_en_gpio_as_i2c_mux=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+
+	if [ $modem_pwr_en_gpio_as_i2c_mux -eq 1 ]
+	then
+    	camera_and_lte_connections_probed=0
+	else
+    	echo "Modem power enable GPIO is NOT configured as an I2C mux GPIO. Camera probing is disabled!"
+    	printf "Modem power enable GPIO is NOT configured as an I2C mux GPIO. Camera probing is disabled!\n" >> $logFile
+    	camera_and_lte_connections_probed=1
+	fi
+fi
+
+# Check the vehicle armed/disarmed status file
+if [ ! -f $armedDisarmedStatusFile ]
+then
+	# The vehicle armed/disarmed status file does not exist - create it - the vehicle is initially disarmed
+	echo "DISARMED" > $armedDisarmedStatusFile
+fi
 
 > $logFile # Clear the log file
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
@@ -742,8 +800,12 @@ camDetected=$(ls /dev/* | grep $video_device)
 
 if [ ! -z "$camDetected" ] && [ $hmiDetected -eq 0 ];
 then
-	probe_camera_and_lte_connections
-	camera_and_lte_connections_probed=1
+	if [ $camera_and_lte_connections_probed -eq 0 ]
+	then
+		probe_camera_and_lte_connections
+		camera_and_lte_connections_probed=1
+	fi
+
 	echo "Camera connected. Starting gstreamer..." | tee -a $logFile
 	service gstreamer-autostart start
 	camConnected=1
@@ -1045,7 +1107,7 @@ do
 				#if [ $camConnected -eq 1 ]
 				#then
 				#	nowTime=$(date +"%T")
-				#	service gstreamer-autostart stop
+				#	service_gstreamer_stop
 				#	echo "GStreamer stopped."
 				#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				#fi
