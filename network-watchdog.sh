@@ -25,6 +25,7 @@ init_variables()
 	switch_to_RTL_mode_service_started=0
 	hmiDetected=0
 	camConnected=0
+	media_devices_count=0
 }
 
 # Check if a keyboard is connected
@@ -55,6 +56,40 @@ check_keyboard_connected()
 	fi
 
 	sleep 20
+}
+
+# Check if media devices are connected
+check_media_devices_connected()
+{
+	prev_media_devices_count=$media_devices_count
+	media_devices_count=$(df --block-size=1K --output='source' | grep -c "/dev/sd")
+
+	if [ $media_devices_count -ne $prev_media_devices_count ]
+	then
+		if [ $media_devices_count -eq 0 ]
+		then
+			echo "Media devices disconnected!"
+
+			if [ $logHistoryFileGenerated -eq 0 ]
+			then
+				printf "\t Media devices disconnected!\n" >> $logFile
+			else
+				nowTime=$(date +"%T")
+				printf "%s Media devices disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+			fi
+		else
+			echo "Media devices connected!"
+			media_devices_list=$(df --block-size=1K --output='source' | grep "/dev/sd")
+
+			if [ $logHistoryFileGenerated -eq 0 ]
+			then
+				printf "\t Media devices %s are now connected!\n" $media_devices_list >> $logFile
+			else
+				nowTime=$(date +"%T")
+				printf "%s Media devices %s are now connected!\n" $nowTime $media_devices_list | tee -a $logFile $logHistoryFile > /dev/null
+			fi
+		fi
+	fi
 }
 
 # Update the keyboard connected status
@@ -241,8 +276,9 @@ choose_connection_type()
 {
 	while true
 	do
-		# Check if a camera is connected
+		# Update devices connected status
 		update_keyboard_connected
+		check_media_devices_connected
 		check_camera_connected
 
 		if [ $hmiDetected -eq 0 ] && [ $lteNetworkSelected -eq 0 ];
@@ -382,8 +418,9 @@ network_connect()
 {
 	while true
 	do
-		# Check if a camera is connected
+		# Update devices connected status
 		update_keyboard_connected
+		check_media_devices_connected
 		check_camera_connected
 
 		echo "Attempting connection to" "$mobileConnectionName" "..."
@@ -739,6 +776,7 @@ max_pref_wifi_con_count=10 # Final value of the preffered wifi connection scan c
 min_wifi_con_name_length=3 # Minimum number of characters in the WIFI connection name
 max_wifi_disable_cnt=10 # Final value of the wifi disable count after which wifi disable attemts are canceled
 samplingPeriodSec=2 # Time interval in which the network status is re-evaluated, [sec]
+media_devices_count=0
 logHistoryFileGenerated=0
 logHistoryFile=""
 lteDeviceName=""
@@ -785,6 +823,7 @@ then
 fi
 
 > $logFile # Clear the log file
+> $logHistoryFilepathContainer # Clear the log history filepath container
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
 printf "Initializing...\n" >> $logFile
 echo "Initializing..."
@@ -794,6 +833,9 @@ init_variables
 
 # Check if a keyboard is connected
 check_keyboard_connected
+
+# Check if media devices are connected
+check_media_devices_connected
 
 # Start camera immediately if detected
 camDetected=$(ls /dev/* | grep $video_device)
@@ -862,6 +904,9 @@ do
 			mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 		fi
 	fi
+
+	# Check the connected media devices
+	check_media_devices_connected
 
 	# Check if a camera is connected
 	check_camera_connected
@@ -1199,6 +1244,18 @@ do
 				service openvpn-autostart start
 				vpn_con_count=0
 			fi
+		fi
+	fi
+
+	if [ $logHistoryFileGenerated -eq 1 ]
+	then
+		num_lines_in_logFile=$(wc -l $logFile | awk -F' ' {'print $1'})
+		num_lines_in_logHistoryFile=$(wc -l $logHistoryFile | awk -F' ' {'print $1'})
+
+		if [ $num_lines_in_logFile -ne $num_lines_in_logHistoryFile ]
+		then
+			# Sync the log file and the log history file
+			cp $logFile $logHistoryFile
 		fi
 	fi
 

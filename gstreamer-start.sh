@@ -83,16 +83,38 @@ then
     stream_res_height=$max_res_height
 fi
 
+# Get a username
+usrname=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
+
 if [ $recording_enabled -eq 1 ]
 then
-    # Get the storage device
-    disk=$(lsblk --output 'NAME','TYPE' | grep -B1 -w part | grep -w disk | awk -F' ' {'print $1'})
-    part=$(lsblk --output 'NAME','MOUNTPOINT' | grep $disk | grep -w / | awk -F"$disk" {'print $2'} | awk -F' ' {'print $1'})
-    storage_device=$disk$part
+    # Get the storage device - first check for inserted media devices
+    media_devices_count=$(df --block-size=1K --output='source','avail','target' | grep -c "/dev/sd")
+    if [ $media_devices_count -eq 1 ]
+    then
+        # Media device detected - initialize the storage device and the recording root directory
+        media_device_detected=1
+        storage_device=$(df --block-size=1K --output='source','avail','target' | grep "/dev/sd" | awk -F' ' {'print $1'})
+        rec_root_dir=$(df --block-size=1K --output='source','avail','target' | grep "/dev/sd" | awk -F' ' {'print $3'})
+    else
+        if [ $media_devices_count -gt 1 ]
+        then
+            printf "\t Multiple media devices found which is not supported!\n" >> $logFile
+        fi
+        media_device_detected=0
+    fi
+
+    if [ $media_device_detected -eq 0 ]
+    then
+        printf "\t Internal storage will be used for video recording.\n" >> $logFile
+        storage_device=$(df --block-size=1K --output='source','avail','target' | grep -w "/" | awk -F' ' {'print $1'})
+        rec_root_dir="/home/$usrname"
+    fi
+
     printf "\t Storage device initialized to %s\n" $storage_device >> $logFile
 
     # Get the available disk space in kilobytes and recalculate it in bytes
-    free_space_kB=$(df --block-size=1K --output='source','avail' | grep /dev/$storage_device | awk -F' ' {'print $2'})
+    free_space_kB=$(df --block-size=1K --output='source','avail' | grep $storage_device | awk -F' ' {'print $2'})
     free_space_bytes=$((free_space_kB*1024-$free_space_reserve_bytes))
 
     # Calculate the max number of files that can be recorded
@@ -111,43 +133,40 @@ if [ $recording_enabled -eq 1 ] && [ $max_files -gt 1 ];
 then
     printf "\t Maximum number of files that can be recorded = %d\n" $max_files >> $logFile
 
-    # Get a username
-    usrname=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
-
     # Get the current date
     nowDate=$(date +"%b-%d-%y")
 
     # Create the Videos directory if it does not exist
-    mkdir /home/$usrname/Videos
-    chown $usrname /home/$usrname/Videos
+    mkdir -p $rec_root_dir/Videos
+    chown $usrname $rec_root_dir/Videos
 
     # Create the xoss directory if it does not exist
-    mkdir /home/$usrname/Videos/xoss
-    chown $usrname /home/$usrname/Videos/xoss
+    mkdir -p $rec_root_dir/Videos/xoss
+    chown $usrname $rec_root_dir/Videos/xoss
 
     # Create a directory for the current date if it does not exist
-    mkdir /home/$usrname/Videos/xoss/$nowDate
-    chown $usrname /home/$usrname/Videos/xoss/$nowDate
+    mkdir -p $rec_root_dir/Videos/xoss/$nowDate
+    chown $usrname $rec_root_dir/Videos/xoss/$nowDate
 
     # Create a subdirectory for the current session
     sub_dir_name=1
-    dircontents=$(ls /home/$usrname/Videos/xoss/$nowDate/)
+    dircontents=$(ls $rec_root_dir/Videos/xoss/$nowDate/)
 
     if [ -z "$dircontents" ]
     then
         # Root date directory is empty - create a subdirectory for the first session
-        recdir="/home/$usrname/Videos/xoss/$nowDate/$sub_dir_name"
-        mkdir $recdir
+        recdir="$rec_root_dir/Videos/xoss/$nowDate/$sub_dir_name"
+        mkdir -p $recdir
     else
         # Root date directory is not empty - get a subdirectory name for the current session
         while true
         do
-            dir_exists=$(ls /home/$usrname/Videos/xoss/$nowDate/ | grep $sub_dir_name)
+            dir_exists=$(ls $rec_root_dir/Videos/xoss/$nowDate/ | grep $sub_dir_name)
 
             if [ -z "$dir_exists" ]
             then
-                recdir="/home/$usrname/Videos/xoss/$nowDate/$sub_dir_name"
-                mkdir $recdir
+                recdir="$rec_root_dir/Videos/xoss/$nowDate/$sub_dir_name"
+                mkdir -p $recdir
                 break
             else
                 sub_dir_name=$((sub_dir_name+1))
