@@ -8,8 +8,29 @@ logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{p
 
 # Get the vehicle armed/disarmed status
 armedDisarmedStatusFile=$(grep -i "VEHICLE_ARMED_DISARMED_STATUS_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-vehicle_armed=$(grep -i -w "armed" $armedDisarmedStatusFile)
-if [ -z "$vehicle_armed" ]
+
+read_file_wait_cnt=0
+while true
+do
+    vehicle_armed=$(grep -i "armed" $armedDisarmedStatusFile)
+
+    if [ ! -z "$vehicle_armed" ]
+    then
+        break
+    fi
+
+    # If here the file $armedDisarmedStatusFile is currently being written to
+    sleep 1
+    read_file_wait_cnt=$((read_file_wait_cnt+1))
+    if [ $read_file_wait_cnt -gt 5 ]
+    then
+        printf "\t Wait timeout occured while trying to read the vehicle armed/disarmed status file in gstreamer start service! Assuming ARMED!\n" >> $logFile
+        vehicle_armed="ARMED"
+        break
+    fi
+done
+
+if [ ! "$vehicle_armed" != "DISARMED" ]
 then
     # Vehicle is disarmed - recording is disabled
     recording_enabled=0

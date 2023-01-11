@@ -121,7 +121,34 @@ service_gstreamer_stop()
 check_camera_connected()
 {
 	camDetected=$(ls /dev/* | grep $video_device)
-	vehicle_armed=$(grep -i -w "armed" $armedDisarmedStatusFile)
+	read_file_wait_cnt=0
+	while true
+	do
+		vehicle_armed=$(grep -i "armed" $armedDisarmedStatusFile)
+
+	    if [ ! -z "$vehicle_armed" ]
+	    then
+	        break
+	    fi
+
+	    # If here the file $armedDisarmedStatusFile is currently being written to
+	    sleep 1
+		read_file_wait_cnt=$((read_file_wait_cnt+1))
+
+		if [ $read_file_wait_cnt -gt 5 ]
+		then
+			echo "Wait timeout occured while trying to read the vehicle armed/disarmed status file!"
+			if [ $logHistoryFileGenerated -eq 0 ]
+			then
+				printf "\t Wait timeout occured while trying to read the vehicle armed/disarmed status file!\n" >> $logFile
+			else
+				nowTime=$(date +"%T")
+				printf "%s Wait timeout occured while trying to read the vehicle armed/disarmed status file!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+			fi
+			vehicle_armed=$prev_vehicle_armed
+			break
+		fi
+	done
 
 	if [ -z "$camDetected" ]
 	then
@@ -135,7 +162,8 @@ check_camera_connected()
 			then
 				printf "\t Camera disconnected. GStreamer stopped.\n" >> $logFile
 			else
-				printf "\t Camera disconnected. GStreamer stopped.\n" | tee -a $logFile $logHistoryFile > /dev/null
+				nowTime=$(date +"%T")
+				printf "%s Camera disconnected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 		fi
 
@@ -153,7 +181,8 @@ check_camera_connected()
 				then
 					printf "\t Keyboard connected. GStreamer stopped.\n" >> $logFile
 				else
-					printf "\t Keyboard connected. GStreamer stopped.\n" | tee -a $logFile $logHistoryFile > /dev/null
+					nowTime=$(date +"%T")
+					printf "%s Keyboard connected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				fi
 			fi
 
@@ -176,7 +205,8 @@ check_camera_connected()
 			then
 				printf "\t Camera connected and no keyboard detected. GStreamer started.\n" >> $logFile
 			else
-				printf "\t Camera connected and no keyboard detected. GStreamer started.\n" | tee -a $logFile $logHistoryFile > /dev/null
+				nowTime=$(date +"%T")
+				printf "%s Camera connected and no keyboard detected. GStreamer started.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 		fi
 
@@ -184,7 +214,7 @@ check_camera_connected()
 		if [ $camConnected -eq 1 ] && [ "$prev_vehicle_armed" != "$vehicle_armed" ];
 		then
 			echo "Vehicle armed status has changed! Restarting gstreamer..."
-			if [ -z "$vehicle_armed" ]
+			if [ ! "$vehicle_armed" != "DISARMED" ]
 			then
 				armed_status="DISARMED"
 			else
@@ -195,7 +225,8 @@ check_camera_connected()
 			then
 				printf "\t Vehicle status has changed to %s! Restarting gstreamer...\n" $armed_status >> $logFile
 			else
-				printf "\t Vehicle status has changed to %s! Restarting gstreamer...\n" $armed_status | tee -a $logFile $logHistoryFile > /dev/null
+				nowTime=$(date +"%T")
+				printf "%s Vehicle status has changed to %s! Restarting gstreamer...\n" $nowTime $armed_status | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 
 			service gstreamer-autostart reload
@@ -303,7 +334,7 @@ choose_connection_type()
 			if [ $len -gt $((min_wifi_con_name_length-1)) ]
 			then
 				wifiConnectionFound=$(nmcli device wifi list | grep -w "$wifiConnectionName")
-				pref_wifi_con_count=0
+				# pref_wifi_con_count=0
 			else
 				pref_wifi_con_count=$((pref_wifi_con_count+1))
 				echo "Invalid WIFI connection name" "$wifiConnectionName" "obtained. Connection name must be at least" "$min_wifi_con_name_length" "characters long!"
