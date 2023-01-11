@@ -117,10 +117,9 @@ service_gstreamer_stop()
 	service gstreamer-autostart stop
 }
 
-# Check if a camera is connected
-check_camera_connected()
+# Update the vehicle armed status
+update_vehicle_armed_status()
 {
-	camDetected=$(ls /dev/* | grep $video_device)
 	read_file_wait_cnt=0
 	while true
 	do
@@ -149,6 +148,13 @@ check_camera_connected()
 			break
 		fi
 	done
+}
+
+# Check if a camera is connected
+check_camera_connected()
+{
+	camDetected=$(ls /dev/* | grep $video_device)
+	update_vehicle_armed_status
 
 	if [ -z "$camDetected" ]
 	then
@@ -852,6 +858,10 @@ then
 	# The vehicle armed/disarmed status file does not exist - create it - the vehicle is initially disarmed
 	echo "DISARMED" > $armedDisarmedStatusFile
 fi
+
+# Initialize the vehicle armed variables
+update_vehicle_armed_status
+prev_vehicle_armed=$vehicle_armed
 
 > $logFile # Clear the log file
 > $logHistoryFilepathContainer # Clear the log history filepath container
