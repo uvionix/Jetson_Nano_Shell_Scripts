@@ -235,7 +235,11 @@ check_camera_connected()
 				printf "%s Vehicle status has changed to %s! Restarting gstreamer...\n" $nowTime $armed_status | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 
-			service gstreamer-autostart reload
+			/usr/bin/killall -2 gst-launch-1.0
+			sleep 1
+			service gstreamer-autostart stop
+			sleep 1
+			service gstreamer-autostart start
 		fi
 
 		camConnected=1
@@ -709,6 +713,7 @@ probe_camera_and_lte_connections()
 	lte_disconnected_after_cam_probing=0
 	lte_wait_disconnected_cnt=0
 	lte_max_wait_disconnected_cnt=10
+	echo "Camera probing is enabled..." | tee -a $logFile
 
 	# Wait until the LTE module is connected
 	echo "Waiting until the LTE module is connected..." | tee -a $logFile
@@ -726,7 +731,7 @@ probe_camera_and_lte_connections()
 
 	# LTE module is connected - probe the camera connection
 	echo "LTE module is connected. Probing the camera connection..." | tee -a $logFile
-	sleep 20
+	sleep 7
 	service gstreamer-camera-probe start
 
 	# Wait to see if the LTE module will be disconnected as a result of the camera probing
