@@ -42,6 +42,9 @@ fi
 # Get the capture device parameter
 capture_dev=$(grep -i capture_dev $setup_file | awk -F'"' '{print $2}')
 
+# Get the recording destination device parameter
+rec_destination_dev=$(grep -i rec_destination_dev $setup_file | awk -F'"' '{print $2}')
+
 # Get the input pixel format
 in_pix_fmt=$(grep -i in_pix_fmt $setup_file | awk -F'"' '{print $2}')
 
@@ -110,13 +113,13 @@ usrname=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /et
 if [ $recording_enabled -eq 1 ]
 then
     # Get the storage device - first check for inserted media devices
-    media_devices_count=$(df --block-size=1K --output='source','avail','target' | grep -c "/dev/sd")
+    media_devices_count=$(df --block-size=1K --output='source','avail','target' | grep -c "$rec_destination_dev")
     if [ $media_devices_count -eq 1 ]
     then
         # Media device detected - initialize the storage device and the recording root directory
         media_device_detected=1
-        storage_device=$(df --block-size=1K --output='source','avail','target' | grep "/dev/sd" | awk -F' ' {'print $1'})
-        rec_root_dir=$(df --block-size=1K --output='source','avail','target' | grep "/dev/sd" | awk -F' ' {'print $3'})
+        storage_device=$(df --block-size=1K --output='source','avail','target' | grep "$rec_destination_dev" | awk -F' ' {'print $1'})
+        rec_root_dir=$(df --block-size=1K --output='source','avail','target' | grep "$rec_destination_dev" | awk -F' ' {'print $3'})
     else
         if [ $media_devices_count -gt 1 ]
         then
@@ -198,8 +201,11 @@ then
     chown $usrname $recdir
     printf "\t Recording directory set to $recdir\n" >> $logFile
 
+    # Add leading zeros to the subdirectory name to use in the recording filename
+    sub_dir_name=$(printf %03d $sub_dir_name)
+
     # Construct a filename for the video recording
-    filename="S$sub_dir_name-V%d"
+    filename="XOSS-$sub_dir_name-%03d"
 
     # Start the gstreamer pipeline
     if [ $streaming_enabled -eq 1 ]
