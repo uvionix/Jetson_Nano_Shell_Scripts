@@ -62,7 +62,7 @@ check_keyboard_connected()
 check_media_devices_connected()
 {
 	prev_media_devices_count=$media_devices_count
-	media_devices_count=$(df --block-size=1K --output='source' | grep -c "/dev/sd")
+	media_devices_count=$(df --block-size=1K --output='source' | grep -E -c "$supported_media_devices_list")
 
 	if [ $media_devices_count -ne $prev_media_devices_count ]
 	then
@@ -78,15 +78,23 @@ check_media_devices_connected()
 				printf "%s Media devices disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 		else
-			echo "Media devices connected!"
-			media_devices_list=$(df --block-size=1K --output='source' | grep "/dev/sd")
+			media_devices_list=$(df --block-size=1K --output='source' | grep -E "$supported_media_devices_list")
+
+			if [ $media_devices_count -gt $prev_media_devices_count ]
+			then
+				media_dev_conn_or_disconn="connected"
+			else
+				media_dev_conn_or_disconn="disconnected"
+			fi
 
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Media devices %s are now connected!\n" $media_devices_list >> $logFile
+				printf "\t Media device has been $media_dev_conn_or_disconn!\n" >> $logFile
+				printf "\t Media devices currently connected are: %s\n" $media_devices_list >> $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Media devices %s are now connected!\n" $nowTime $media_devices_list | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Media device has been $media_dev_conn_or_disconn!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Media devices currently connected are: %s\n" $nowTime $media_devices_list | tee -a $logFile $logHistoryFile > /dev/null
 			fi
 		fi
 	fi
@@ -797,6 +805,7 @@ Disconnected=0
 Reconnecting=1
 Connected=2
 video_device=$(grep -i capture_dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
+rec_destination_dev=$(grep -i rec_destination_dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
 lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 wifiInterfaceName=$(grep -i "WIFI_INTERFACE_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
 wifi_disable_gpio_offset=$(grep -i "WIFI_DISABLE_GPIO_OFFSET" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
@@ -837,6 +846,12 @@ switch_to_RTL_mode_service_started=0
 hmiDetected=0
 camConnected=0
 schedule_reboot=0
+supported_media_devices_list="$rec_destination_dev|/dev/sd"
+
+> $logFile # Clear the log file
+> $logHistoryFilepathContainer # Clear the log history filepath container
+printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
+echo "Initializing..." | tee -a $logFile
 
 # Check if the modem power enable type has been configured
 modem_power_enable_type_configured=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup)
@@ -868,24 +883,42 @@ fi
 update_vehicle_armed_status
 prev_vehicle_armed=$vehicle_armed
 
-> $logFile # Clear the log file
-> $logHistoryFilepathContainer # Clear the log history filepath container
-printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
-printf "Initializing...\n" >> $logFile
-echo "Initializing..."
-
 # Initialize script variables
 init_variables
 
 # Check if a keyboard is connected
 check_keyboard_connected
 
+# Check if a camera is connected
+camDetected=$(ls /dev/* | grep $video_device)
+
+if [ ! -z "$camDetected" ]
+then
+	echo "Camera connected as $video_device. Waiting for recording destination device $rec_destination_dev to become available..." | tee -a $logFile
+	rec_dev_detected_wait_cnt=0
+	while true
+	do
+		rec_dev_found=$(df --block-size=1K --output='source' | grep "$rec_destination_dev")
+		if [ ! -z "$rec_dev_found" ]
+		then
+			break
+		fi
+
+		if [ $rec_dev_detected_wait_cnt -ge 5 ]
+		then
+			echo -e "\t Wait timeout occured! Skipping..." | tee -a $logFile
+			break
+		fi
+
+		sleep $samplingPeriodSec
+		rec_dev_detected_wait_cnt=$((rec_dev_detected_wait_cnt+1))
+	done
+fi
+
 # Check if media devices are connected
 check_media_devices_connected
 
-# Start camera immediately if detected
-camDetected=$(ls /dev/* | grep $video_device)
-
+# Start using camera immediately if detected
 if [ ! -z "$camDetected" ] && [ $hmiDetected -eq 0 ];
 then
 	if [ $camera_and_lte_connections_probed -eq 0 ]
