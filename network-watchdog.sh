@@ -118,13 +118,6 @@ update_keyboard_connected()
 	done
 }
 
-# Stop the gstreamer service
-service_gstreamer_stop()
-{
-	/usr/bin/killall -2 gst-launch-1.0
-	service gstreamer-autostart stop
-}
-
 # Update the vehicle armed status
 update_vehicle_armed_status()
 {
@@ -170,7 +163,7 @@ check_camera_connected()
 		if [ $camConnected -eq 1 ]
 		then
 			# Camera has been disconnected - stop gstreamer
-			service_gstreamer_stop
+			camera_force_stop
 			echo "Camera disconnected. GStreamer stopped."
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
@@ -189,7 +182,7 @@ check_camera_connected()
 			# Keyboard has been detected - stop gstreamer if started
 			if [ $camConnected -eq 1 ]
 			then
-				service_gstreamer_stop
+				camera_stop
 				echo "Keyboard connected. GStreamer stopped."
 				if [ $logHistoryFileGenerated -eq 0 ]
 				then
@@ -213,7 +206,7 @@ check_camera_connected()
 			fi
 
 			# Camera has been connected - start gstreamer
-			service gstreamer-autostart start
+			camera_start
 			echo "Camera connected and no keyboard detected. GStreamer started."
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
@@ -227,27 +220,23 @@ check_camera_connected()
 		# Check the vehicle armed/disarmed status
 		if [ $camConnected -eq 1 ] && [ "$prev_vehicle_armed" != "$vehicle_armed" ];
 		then
-			echo "Vehicle armed status has changed! Restarting gstreamer..."
+			echo "Vehicle armed status has changed!"
 			if [ ! "$vehicle_armed" != "DISARMED" ]
 			then
 				armed_status="DISARMED"
+				camera_stop_recording
 			else
 				armed_status="ARMED"
+				camera_start_recording
 			fi
 
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Vehicle status has changed to %s! Restarting gstreamer...\n" $armed_status >> $logFile
+				printf "\t Vehicle status has changed to %s\n" $armed_status >> $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Vehicle status has changed to %s! Restarting gstreamer...\n" $nowTime $armed_status | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Vehicle status has changed to %s\n" $nowTime $armed_status | tee -a $logFile $logHistoryFile > /dev/null
 			fi
-
-			/usr/bin/killall -2 gst-launch-1.0
-			sleep 1
-			service gstreamer-autostart stop
-			sleep 1
-			service gstreamer-autostart start
 		fi
 
 		camConnected=1
@@ -628,7 +617,7 @@ process_network_just_disconnected()
 	#if [ $camConnected -eq 1 ]
 	#then
 	#	nowTime=$(date +"%T")
-	#	service_gstreamer_stop
+	#	service gstreamer-autostart stop
 	#	echo "GStreamer stopped."
 	#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 	#fi
@@ -648,7 +637,7 @@ disable_wifi()
 	echo "Disabling WIFI..." | tee -a $logFile
 
 	# Check if the GPIO base value has already been configured - if not configure it
-	gpio_base_configured=$(grep -i "GPIO_BASE" /etc/default/network-watchdog-setup)
+	gpio_base_configured=$(grep -i "GPIO_BASE" $nw_setup_file)
 	if [ -z "$gpio_base_configured" ]
 	then
     	echo "Configuring GPIO_BASE by examining the file /sys/kernel/debug/gpio ..." | tee -a $logFile
@@ -657,11 +646,11 @@ disable_wifi()
     	gpio_base=$(cat /sys/kernel/debug/gpio | grep gpiochip0 | awk -F' ' '{print $3}' | awk -F'-' '{print $1}')
 
     	# Write the GPIO base value in the network watchdog setup file
-    	echo "GPIO_BASE=$gpio_base" | tee -a /etc/default/network-watchdog-setup > /dev/null
+    	echo "GPIO_BASE=$gpio_base" | tee -a $nw_setup_file > /dev/null
 	fi
 
 	# Get the GPIO base value
-	gpio_base=$(grep -i "GPIO_BASE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+	gpio_base=$(grep -i "GPIO_BASE" $nw_setup_file | awk -F'=' '{print $2}')
 	echo "GPIO base value set to $gpio_base" | tee -a $logFile
 
 	# Calculate the number of the wifi disable GPIO
@@ -798,28 +787,63 @@ probe_camera_and_lte_connections()
 	#sleep 10
 }
 
+# Start recording
+camera_start_recording()
+{
+	echo "r" >> $gst_cmds_file
+}
+
+# Stop recording
+camera_stop_recording()
+{
+	echo "s" >> $gst_cmds_file
+}
+
+# Start the camera
+camera_start()
+{
+	service gstreamer-autostart start
+}
+
+# Stop the camera
+camera_stop()
+{
+	# This command will also stop the gstreamer-autostart service
+	echo "q" >> $gst_cmds_file
+}
+
+# Stop the camera by terminating the gstreamer-autostart service
+camera_force_stop()
+{
+	service gstreamer-autostart stop
+}
+
 ### MAIN SCRIPT STARTS HERE ###
 
 # SCRIPT PARAMETERS
+nw_setup_file="/etc/default/network-watchdog-setup"
+mw_setup_file="/etc/default/modem-watchdog-setup"
+gst_setup_file="/etc/default/gstreamer-setup"
 Disconnected=0
 Reconnecting=1
 Connected=2
-video_device=$(grep -i capture_dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
-rec_destination_dev=$(grep -i rec_destination_dev /etc/default/gstreamer-setup | awk -F'"' '{print $2}')
-lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-wifiInterfaceName=$(grep -i "WIFI_INTERFACE_NAME" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-wifi_disable_gpio_offset=$(grep -i "WIFI_DISABLE_GPIO_OFFSET" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-disable_wifi_if_lte_net_selected=$(grep -i "DISABLE_WIFI_IF_LTE_NETWORK_IS_SELECTED" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+gst_cmds_file=$(grep -i cmd_file $gst_setup_file | awk -F'"' '{print $2}')
+video_device=$(grep -i capture_dev $gst_setup_file | awk -F'"' '{print $2}')
+rec_destination_dev=$(grep -i rec_destination_dev $gst_setup_file | awk -F'"' '{print $2}')
+lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'=' '{print $2}')
+wifiInterfaceName=$(grep -i "WIFI_INTERFACE_NAME" $nw_setup_file | awk -F'=' '{print $2}')
+wifi_disable_gpio_offset=$(grep -i "WIFI_DISABLE_GPIO_OFFSET" $nw_setup_file | awk -F'=' '{print $2}')
+disable_wifi_if_lte_net_selected=$(grep -i "DISABLE_WIFI_IF_LTE_NETWORK_IS_SELECTED" $nw_setup_file | awk -F'=' '{print $2}')
 lteInterfaceName="usb1"
 lteInterfaceNameAlt="usb0"
 vpnInterfaceName="tun0"
-logFile=$(grep -i "LOG_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-logHistoryDir=$(grep -i "LOG_HISTORY_DIR" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-set_max_cpu_gpu_emc_clocks=$(grep -i "SET_MAX_CPU_GPU_EMC_CLOCKS" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
-armedDisarmedStatusFile=$(grep -i "VEHICLE_ARMED_DISARMED_STATUS_FILE" /etc/default/network-watchdog-setup | awk -F'=' '{print $2}')
+logFile=$(grep -i "LOG_FILE" $nw_setup_file | awk -F'=' '{print $2}')
+logHistoryDir=$(grep -i "LOG_HISTORY_DIR" $nw_setup_file | awk -F'=' '{print $2}')
+logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" $nw_setup_file | awk -F'=' '{print $2}')
+auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" $nw_setup_file | awk -F'=' '{print $2}')
+auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" $nw_setup_file | awk -F'=' '{print $2}')
+set_max_cpu_gpu_emc_clocks=$(grep -i "SET_MAX_CPU_GPU_EMC_CLOCKS" $nw_setup_file | awk -F'=' '{print $2}')
+armedDisarmedStatusFile=$(grep -i "VEHICLE_ARMED_DISARMED_STATUS_FILE" $nw_setup_file | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
@@ -854,13 +878,13 @@ printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
 echo "Initializing..." | tee -a $logFile
 
 # Check if the modem power enable type has been configured
-modem_power_enable_type_configured=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup)
+modem_power_enable_type_configured=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $mw_setup_file)
 if [ -z "$modem_power_enable_type_configured" ]
 then
 	camera_and_lte_connections_probed=0
 else
 	# Check if the modem power enable GPIO is configured is an I2C mux GPIO
-	modem_pwr_en_gpio_as_i2c_mux=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" /etc/default/modem-watchdog-setup | awk -F'=' '{print $2}')
+	modem_pwr_en_gpio_as_i2c_mux=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $mw_setup_file | awk -F'=' '{print $2}')
 
 	if [ $modem_pwr_en_gpio_as_i2c_mux -eq 1 ]
 	then
@@ -928,7 +952,7 @@ then
 	fi
 
 	echo "Camera connected. Starting gstreamer..." | tee -a $logFile
-	service gstreamer-autostart start
+	camera_start
 	camConnected=1
 fi
 
@@ -1231,7 +1255,7 @@ do
 				#if [ $camConnected -eq 1 ]
 				#then
 				#	nowTime=$(date +"%T")
-				#	service_gstreamer_stop
+				#	service gstreamer-autostart stop
 				#	echo "GStreamer stopped."
 				#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				#fi
