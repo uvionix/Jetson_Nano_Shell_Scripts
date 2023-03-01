@@ -8,26 +8,6 @@
 
 # SCRIPT FUNCTIONS
 
-# Initialize script variables
-init_variables()
-{
-	lteDeviceName=""
-	mobileConnectionName=""
-	mobileInterfaceName=""
-	networkStatus=$Reconnecting
-	vpn_con_count=0
-	net_con_count=0
-	ip_address_wait_count=0
-	ip_address_wait_timout_occured=0
-	pref_wifi_con_count=0
-	wifiNetworkSelected=0
-	lteNetworkSelected=0
-	switch_to_RTL_mode_service_started=0
-	hmiDetected=0
-	camConnected=0
-	media_devices_count=0
-}
-
 # Check if a keyboard is connected
 check_keyboard_connected()
 {
@@ -39,16 +19,14 @@ check_keyboard_connected()
 		then
 			if [[ "$(cat $dev/bInterfaceClass)" == "03" && "$(cat $dev/bInterfaceProtocol)" == "01" ]]
 			then
-				echo "Keyboard detected: $dev"
-				printf "Keyboard detected. WIFI connection type is selected.\n" >> $logFile
+				printf "Keyboard detected. WIFI connection type is selected.\n" | tee -a $logFile
 				hmiDetected=1
 				return
 			fi
 		fi
 	done
 
-	echo "Keyboard not detected. LTE connection type is selected."
-	printf "Keyboard not detected. LTE connection type is selected.\n" >> $logFile
+	printf "Keyboard not detected. LTE connection type is selected.\n" | tee -a $logFile
 
 	if [ $disable_wifi_if_lte_net_selected -eq 1 ]
 	then
@@ -68,14 +46,12 @@ check_media_devices_connected()
 	then
 		if [ $media_devices_count -eq 0 ]
 		then
-			echo "Media devices disconnected!"
-
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Media devices disconnected!\n" >> $logFile
+				printf "\t Media devices disconnected!\n" | tee -a $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Media devices disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Media devices disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile
 			fi
 		else
 			media_devices_list=$(df --block-size=1K --output='source' | grep -E "$supported_media_devices_list")
@@ -89,12 +65,12 @@ check_media_devices_connected()
 
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Media device has been $media_dev_conn_or_disconn!\n" >> $logFile
-				printf "\t Media devices currently connected are: %s\n" $media_devices_list >> $logFile
+				printf "\t Media device has been $media_dev_conn_or_disconn!\n" | tee -a $logFile
+				printf "\t Media devices currently connected are: %s\n" $media_devices_list | tee -a $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Media device has been $media_dev_conn_or_disconn!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-				printf "%s Media devices currently connected are: %s\n" $nowTime $media_devices_list | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Media device has been $media_dev_conn_or_disconn!\n" $nowTime | tee -a $logFile $logHistoryFile
+				printf "%s Media devices currently connected are: %s\n" $nowTime $media_devices_list | tee -a $logFile $logHistoryFile
 			fi
 		fi
 	fi
@@ -118,44 +94,10 @@ update_keyboard_connected()
 	done
 }
 
-# Update the vehicle armed status
-update_vehicle_armed_status()
-{
-	read_file_wait_cnt=0
-	while true
-	do
-		vehicle_armed=$(grep -i "armed" $armedDisarmedStatusFile)
-
-	    if [ ! -z "$vehicle_armed" ]
-	    then
-	        break
-	    fi
-
-	    # If here the file $armedDisarmedStatusFile is currently being written to
-	    sleep 1
-		read_file_wait_cnt=$((read_file_wait_cnt+1))
-
-		if [ $read_file_wait_cnt -gt 5 ]
-		then
-			echo "Wait timeout occured while trying to read the vehicle armed/disarmed status file!"
-			if [ $logHistoryFileGenerated -eq 0 ]
-			then
-				printf "\t Wait timeout occured while trying to read the vehicle armed/disarmed status file!\n" >> $logFile
-			else
-				nowTime=$(date +"%T")
-				printf "%s Wait timeout occured while trying to read the vehicle armed/disarmed status file!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-			fi
-			vehicle_armed=$prev_vehicle_armed
-			break
-		fi
-	done
-}
-
 # Check if a camera is connected
 check_camera_connected()
 {
 	camDetected=$(ls /dev/* | grep $video_device)
-	update_vehicle_armed_status
 
 	if [ -z "$camDetected" ]
 	then
@@ -164,13 +106,12 @@ check_camera_connected()
 		then
 			# Camera has been disconnected - stop gstreamer
 			camera_force_stop
-			echo "Camera disconnected. GStreamer stopped."
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Camera disconnected. GStreamer stopped.\n" >> $logFile
+				printf "\t Camera disconnected. GStreamer stopped.\n" | tee -a $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Camera disconnected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Camera disconnected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile
 			fi
 		fi
 
@@ -183,13 +124,12 @@ check_camera_connected()
 			if [ $camConnected -eq 1 ]
 			then
 				camera_stop
-				echo "Keyboard connected. GStreamer stopped."
 				if [ $logHistoryFileGenerated -eq 0 ]
 				then
-					printf "\t Keyboard connected. GStreamer stopped.\n" >> $logFile
+					printf "\t Keyboard connected. GStreamer stopped.\n" | tee -a $logFile
 				else
 					nowTime=$(date +"%T")
-					printf "%s Keyboard connected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+					printf "%s Keyboard connected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile
 				fi
 			fi
 
@@ -207,51 +147,25 @@ check_camera_connected()
 
 			# Camera has been connected - start gstreamer
 			camera_start
-			echo "Camera connected and no keyboard detected. GStreamer started."
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Camera connected and no keyboard detected. GStreamer started.\n" >> $logFile
+				printf "\t Camera connected and no keyboard detected. GStreamer started.\n" | tee -a $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Camera connected and no keyboard detected. GStreamer started.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-			fi
-		fi
-
-		# Check the vehicle armed/disarmed status
-		if [ $camConnected -eq 1 ] && [ "$prev_vehicle_armed" != "$vehicle_armed" ];
-		then
-			echo "Vehicle armed status has changed!"
-			if [ ! "$vehicle_armed" != "DISARMED" ]
-			then
-				armed_status="DISARMED"
-				camera_stop_recording
-			else
-				armed_status="ARMED"
-				camera_start_recording
-			fi
-
-			if [ $logHistoryFileGenerated -eq 0 ]
-			then
-				printf "\t Vehicle status has changed to %s\n" $armed_status >> $logFile
-			else
-				nowTime=$(date +"%T")
-				printf "%s Vehicle status has changed to %s\n" $nowTime $armed_status | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Camera connected and no keyboard detected. GStreamer started.\n" $nowTime | tee -a $logFile $logHistoryFile
 			fi
 		fi
 
 		camConnected=1
 	fi
-
-	prev_vehicle_armed=$vehicle_armed
 }
 
 # Check the prerequisites for starting MAVProxy
 check_mavproxy_prerequisites()
 {
 	# Get the UART device name
-	uart_device=$(grep -i "device=" /etc/default/mavproxy-setup | awk -F'"' '{print $2}')
-	echo "MAVProxy UART device is: $uart_device"
-	printf "\t MAVProxy UART device is: %s\n" $uart_device >> $logFile
+	uart_device=$(grep -i "device=" $mavproxy_setup_file | awk -F'"' '{print $2}')
+	echo "MAVProxy UART device is: $uart_device" | tee -a $logFile
 
 	# Check the status of the nvgetty service and disable it if necessary
 	nvgetty_found=""
@@ -265,8 +179,7 @@ check_mavproxy_prerequisites()
 
 		if [ -z "$nvgetty_disabled" ] || [ -z "$nvgetty_inactive" ];
 		then
-			echo "nvgetty service is enabled. Stopping and disabling the nvgetty service..."
-			printf "\t nvgetty service is enabled. Stopping and disabling the nvgetty service...\n" >> $logFile
+			echo "nvgetty service is enabled. Stopping and disabling the nvgetty service..." | tee -a $logFile
 			systemctl stop nvgetty
 			sleep 2
 			systemctl disable nvgetty
@@ -281,31 +194,26 @@ check_mavproxy_prerequisites()
 
 	if [ ! -z "$port_rights" ] && [ $port_rights -lt 660 ];
 	then
-		echo "Port $uart_device permissions set to $port_rights. Changing permissions of port $uart_device to 666..."
-		printf "\t Port %s permissions set to %s. Changing permissions of port %s to 666...\n" $uart_device $port_rights $uart_device >> $logFile
+		echo "Port $uart_device permissions set to $port_rights. Changing permissions of port $uart_device to 666..." | tee -a $logFile
 		chmod 666 $uart_device
 		schedule_reboot=1
 	else
 		if [ ! -z "$port_rights" ] && [ $port_rights -ge 660 ];
 		then
-			echo "Port $uart_device permissions are set correctly!"
-			printf "\t Port %s permissions are set correctly!\n" $uart_device >> $logFile
+			echo "Port $uart_device permissions are set correctly!" | tee -a $logFile
 		else
-			echo "Port $uart_device not found!"
-			printf "\t Port %s not found!\n" $uart_device >> $logFile
+			echo "Port $uart_device not found!" | tee -a $logFile
 		fi
 	fi
 
 	if [ $schedule_reboot -eq 1 ]
 	then
-		echo "Rebooting system..."
-		printf "\t Rebooting system...\n" >> $logFile
+		echo "Rebooting system..." | tee -a $logFile
 		sleep 5
 		reboot
 	elif [ ! -z "$port_rights" ]
 	then
-		echo "MAVProxy prerequisites met!"
-		printf "\t MAVProxy prerequisites met!\n" >> $logFile
+		echo "MAVProxy prerequisites met!" | tee -a $logFile
 	fi
 }
 
@@ -325,15 +233,13 @@ choose_connection_type()
 			lteNetworkSelected=1
 			pref_wifi_con_count=$max_pref_wifi_con_count
 			wifiConnectionFound=""
-			echo "Check if the LTE module is connected..."
-			printf "Check if the LTE module is connected...\n" >> $logFile
+			echo "Check if the LTE module is connected..." | tee -a $logFile
 		fi
 
 		if [ $lteNetworkSelected -eq 0 ]
 		then
 			# WIFI connection type is selected -> check if a preffered WIFI connection is available
-			echo "Check if a preffered WIFI connection is available..."
-			printf "Check if a preffered WIFI connection is available...\n" >> $logFile
+			echo "Check if a preffered WIFI connection is available..." | tee -a $logFile
 			# wifiConnectionName=$(nmcli connection | grep -m1 "wifi" | awk -F' ' '{print $1}')
 			wifiConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 wifi | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
 			len=`expr length "$wifiConnectionName"`
@@ -344,8 +250,7 @@ choose_connection_type()
 				# pref_wifi_con_count=0
 			else
 				pref_wifi_con_count=$((pref_wifi_con_count+1))
-				echo "Invalid WIFI connection name" "$wifiConnectionName" "obtained. Connection name must be at least" "$min_wifi_con_name_length" "characters long!"
-				printf "Invalid WIFI connection name %s obtained. Connection name must be at least %d characters long!\n" "$wifiConnectionName" $min_wifi_con_name_length >> $logFile
+				echo "Invalid WIFI connection name" "$wifiConnectionName" "obtained. Connection name must be at least" "$min_wifi_con_name_length" "characters long!" | tee -a $logFile
 				sleep $samplingPeriodSec
 
 				if [ $pref_wifi_con_count -le $max_pref_wifi_con_count ]
@@ -365,8 +270,7 @@ choose_connection_type()
 				# Check if the LTE module is available
 				if [ $lteNetworkSelected -eq 0 ]
 				then
-					echo "Preffered WIFI connection is not available. Check if the LTE module is connected..."
-					printf "Preffered WIFI connection is not available. Check if the LTE module is connected...\n" >> $logFile
+					echo "Preffered WIFI connection is not available. Check if the LTE module is connected..." | tee -a $logFile
 				fi
 
 				lteNetworkSelected=1
@@ -376,15 +280,13 @@ choose_connection_type()
 				then
 					# LTE module is connected - get the associated device name
 					lteDeviceName=$(nmcli device | grep -m1 gsm | awk -F' ' '{print $1}')
-					echo "LTE module" "$lteManufacturerName" "connected. Getting device name..."
-					printf "LTE module %s connected. Getting device name...\n" "$lteManufacturerName" >> $logFile
+					echo "LTE module" "$lteManufacturerName" "connected. Getting device name..." | tee -a $logFile
 
 					if [ -z "$lteDeviceName" ]
 					then
 						if [ $pref_wifi_con_count -gt $((max_pref_wifi_con_count+5)) ]
 						then
-							echo "Failed initializing LTE device name. Process restarting..."
-							printf "Failed initializing LTE device name. Process restarting...\n" >> $logFile
+							echo "Failed initializing LTE device name. Process restarting..." | tee -a $logFile
 							pref_wifi_con_count=0
 							lteNetworkSelected=0
 						fi
@@ -393,53 +295,45 @@ choose_connection_type()
 						continue
 					fi
 
-					echo "LTE module" "$lteManufacturerName" "connected. Device name:" "$lteDeviceName"
-					printf "LTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" >> $logFile
+					echo "LTE module" "$lteManufacturerName" "connected. Device name:" "$lteDeviceName" | tee -a $logFile
 					
 					lteDeviceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "una")
 
 					if [ ! -z "$lteDeviceUnavailable" ]
 					then
-						echo "LTE device is not available. Check the SIM card!"
-						printf "LTE device is not available. Check the SIM card!\n" >> $logFile
+						echo "LTE device is not available. Check the SIM card!" | tee -a $logFile
 						pref_wifi_con_count=0
 						lteNetworkSelected=0
 					else
 						# LTE device is available - get the mobile connection name
 						mobileConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 gsm | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
 
-						echo "LTE interface name is set to" "$lteInterfaceName"
-						printf "LTE interface name is set to %s.\n" "$lteInterfaceName" >> $logFile
+						echo "LTE interface name is set to $lteInterfaceName" | tee -a $logFile
 
 						mobileInterfaceName=$lteInterfaceName
 						wifiNetworkSelected=0
 						lteNetworkSelected=1
-						echo "Preffered mobile connection" "$mobileConnectionName" "found!"
-						printf "Preffered mobile connection %s found!\n" "$mobileConnectionName" >> $logFile
+						echo "Preffered mobile connection $mobileConnectionName found!" | tee -a $logFile
 						break
 					fi
 				else
 					# LTE module is not connected
 					if [ $hmiDetected -eq 1 ]
 					then
-						echo "LTE module is not connected. Scanning for a preffered WIFI connection..."
-						printf "LTE module is not connected. Scanning for a preffered WIFI connection...\n" >> $logFile
+						echo "LTE module is not connected. Scanning for a preffered WIFI connection..." | tee -a $logFile
 					else
-						echo "LTE module is not connected. Process restarting..."
-						printf "LTE module is not connected. Process restarting...\n" >> $logFile
+						echo "LTE module is not connected. Process restarting..." | tee -a $logFile
 					fi
 
 					pref_wifi_con_count=0
 					lteNetworkSelected=0
 				fi
 			else
-				echo "Preffered WIFI connection is not available."
-				printf "Preffered WIFI connection is not available.\n" >> $logFile
+				echo "Preffered WIFI connection is not available." | tee -a $logFile
 			fi
 		else
 			# WIFI connection type is selected
-			echo "Preffered WIFI connection" "$wifiConnectionName" "found!"
-			printf "Preffered WIFI connection %s found!\n" "$wifiConnectionName" >> $logFile
+			echo "Preffered WIFI connection $wifiConnectionName found!" | tee -a $logFile
 			mobileConnectionName="$wifiConnectionName"
 			mobileInterfaceName=$wifiInterfaceName
 			wifiNetworkSelected=1
@@ -461,8 +355,7 @@ network_connect()
 		check_media_devices_connected
 		check_camera_connected
 
-		echo "Attempting connection to" "$mobileConnectionName" "..."
-		printf "Attempting connection to %s...\n" "$mobileConnectionName" >> $logFile
+		echo "Attempting connection to $mobileConnectionName..." | tee -a $logFile
 		connectionFound=$(nmcli connection | grep -i -o "$mobileConnectionName")
 
 		if [ ! -z "$connectionFound" ]
@@ -480,32 +373,24 @@ network_connect()
 					printf "\t Wifi interface set to %s\n" $wifiInterfaceName >> $logFile
 				fi
 
-				printf "Connection successful! Synchronizing date and time...\n" >> $logFile
-				echo "Connection successful! Synchronizing date and time..."
+				echo "Connection successful! Synchronizing date and time..." | tee -a $logFile
 				timedatectl set-ntp off
+				sleep 2
 				timedatectl set-ntp on
 				sleep 10
 
 				nowTime=$(date +"%T")
 				nowDate=$(date +"%D")
-				echo "Date and time set to " "$nowDate" "$nowTime"
-				printf "Date and time set to %s %s\n" $nowDate $nowTime >> $logFile
+				echo "Date and time set to $nowDate $nowTime" | tee -a $logFile
 				printf "============= %s %s STARTING LOG FILE =============\n" $nowDate $nowTime >> $logFile
-
-				echo "Checking MAVProxy prerequisites..."
-				printf "%s Checking MAVProxy prerequisites...\n" $nowTime >> $logFile
-				check_mavproxy_prerequisites
 
 				if [ $set_max_cpu_gpu_emc_clocks -eq 1 ]
 				then
 					# Set static max frequency to CPU, GPU and EMC clocks
-					nowTime=$(date +"%T")
-					echo "Setting static max frequency to CPU, GPU and EMC clocks..."
-					printf "%s Setting static max frequency to CPU, GPU and EMC clocks...\n" $nowTime >> $logFile
+					echo "$nowTime Setting static max frequency to CPU, GPU and EMC clocks..." | tee -a $logFile
 					jetson_clocks
 				else
-					echo "Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!"
-					printf "Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!\n" >> $logFile
+					echo "$nowTime Auto setting up static max frequency to CPU, GPU and EMC clocks is disabled!" | tee -a $logFile
 				fi
 
 				# Generate the filepath for the log history file
@@ -521,26 +406,23 @@ network_connect()
 				ovpn_config_file=$(find /etc/openvpn/ -iname *.ovpn)
 				if [ -z "$ovpn_config_file" ]
 				then
-					echo "The directory /etc/openvpn/ does not contain a VPN configuration file. Aborting."
-					printf "%s The directory /etc/openvpn/ does not contain a VPN configuration file. Aborting.\n" $nowTime >> $logFile
+					echo "$nowTime The directory /etc/openvpn/ does not contain a VPN configuration file. Aborting!" | tee -a $logFile
 					cp $logFile $logHistoryFile
 					exit 0
 				fi
 
-				echo "#PATH TO THE OPENVPN CONFIGURATION FILE" > /etc/default/openvpn-setup
-				echo CONFIG_FILE_PATH=\"$ovpn_config_file\" >> /etc/default/openvpn-setup
-				echo "Starting the VPN service..."
-				printf "%s Starting the VPN service...\n" $nowTime >> $logFile
+				echo "#PATH TO THE OPENVPN CONFIGURATION FILE" > $openvpn_setup_file
+				echo CONFIG_FILE_PATH=\"$ovpn_config_file\" >> $openvpn_setup_file
+				echo "$nowTime Starting the VPN service..." | tee -a $logFile
 				printf "\t VPN configuration file set to %s\n" $ovpn_config_file >> $logFile
-				service openvpn-autostart start
+				service openvpn-autostart restart
 
 				# Create the log history file from the log file generated so far
 				# (from now on every log message is written to $logFile and $logHistoryFile)
 				cp $logFile $logHistoryFile
 				break
 			else
-				echo "Connection failed! Retrying..."
-				printf "Connection failed! Retrying...\n" >> $logFile
+				echo "Connection failed! Retrying..." | tee -a $logFile
 				nmcli connection down "$mobileConnectionName"
 			fi
 		fi
@@ -571,45 +453,32 @@ network_disconnect()
 process_network_just_disconnected()
 {
 	ip_address_wait_count=0
-	printf "%s Network disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+	printf "%s Network disconnected!\n" $nowTime | tee -a $logFile $logHistoryFile
 
-	# Stop the VPN and MAVProxy services
-
-	echo "Stopping the VPN service..."
-	printf "%s Stopping the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+	# Stop the VPN service
+	printf "%s Stopping the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile
 	service openvpn-autostart stop
-
-	nowTime=$(date +"%T")
-	echo "Stopping MAVProxy..."
-	printf "%s Stopping MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-	service update-uav-latest-status stop
-	service mavproxy-autostart stop
-	sleep 2
 	nowTime=$(date +"%T")
 		
 	if [ $auto_switch_to_loiter -eq 1 ]
 	then
-		echo "Switching to LOITER mode..."
-		printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-		/usr/local/bin/chmod_offline.py loiter | tee -a $logFile $logHistoryFile > /dev/null
+		printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile
+		/usr/local/bin/chmod_offline.py $chmod_port $chmod_baudrate loiter | tee -a $logFile $logHistoryFile
 	else
-		echo "Auto switching to LOITER mode is disabled!"
-		printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+		printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 	fi
 			
 	nowTime=$(date +"%T")
 
 	if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $auto_switch_to_rtl -eq 1 ];
 	then
-		echo "Starting switch to RTL service..."
-		printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+		printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile
 		service switch-to-rtl start
 		switch_to_RTL_mode_service_started=1
 	else
 		if [ $auto_switch_to_rtl -eq 0 ]
 		then
-			echo "Auto switching to RTL mode is disabled!"
-			printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+			printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 		fi
 	fi
 
@@ -617,9 +486,6 @@ process_network_just_disconnected()
 	#if [ $camConnected -eq 1 ]
 	#then
 	#	nowTime=$(date +"%T")
-	#	service gstreamer-autostart stop
-	#	echo "GStreamer stopped."
-	#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 	#fi
 
 	net_con_count=0
@@ -710,10 +576,10 @@ probe_camera_and_lte_connections()
 	lte_disconnected_after_cam_probing=0
 	lte_wait_disconnected_cnt=0
 	lte_max_wait_disconnected_cnt=10
-	echo "Camera probing is enabled..." | tee -a $logFile
+	echo -e "\t Camera probing is enabled..." | tee -a $logFile
 
 	# Wait until the LTE module is connected
-	echo "Waiting until the LTE module is connected..." | tee -a $logFile
+	echo -e "\t Waiting until the LTE module is connected..." | tee -a $logFile
 	while true
 	do
     	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
@@ -727,19 +593,19 @@ probe_camera_and_lte_connections()
 	done
 
 	# LTE module is connected - probe the camera connection
-	echo "LTE module is connected. Probing the camera connection..." | tee -a $logFile
+	echo -e "\t LTE module is connected. Probing the camera connection..." | tee -a $logFile
 	sleep 7
 	service gstreamer-camera-probe start
 
 	# Wait to see if the LTE module will be disconnected as a result of the camera probing
-	echo "Waiting to see if the LTE module will be disconnected as a result of the camera probing..." | tee -a $logFile
+	echo -e "\t Waiting to see if the LTE module will be disconnected as a result of the camera probing..." | tee -a $logFile
 	while true
 	do
     	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
 
     	if [ -z "$lteConnected" ]
     	then
-			echo "LTE module disconnected!" | tee -a $logFile
+			echo -e "\t LTE module disconnected!" | tee -a $logFile
 			lte_disconnected_after_cam_probing=1
         	break
     	fi
@@ -748,7 +614,7 @@ probe_camera_and_lte_connections()
 
     	if [ $lte_wait_disconnected_cnt -gt $lte_max_wait_disconnected_cnt ]
     	then
-			echo "Wait timeout! LTE is still connected." | tee -a $logFile
+			echo -e "\t Wait timeout! LTE is still connected." | tee -a $logFile
         	break
     	fi
 
@@ -756,7 +622,7 @@ probe_camera_and_lte_connections()
 	done
 
 	# Stop camera probing
-	echo "Stopping camera probing..." | tee -a $logFile
+	echo -e "\t Stopping camera probing..." | tee -a $logFile
 	service gstreamer-camera-probe stop
 
 	if [ $lte_disconnected_after_cam_probing -eq 0 ]
@@ -765,7 +631,7 @@ probe_camera_and_lte_connections()
 	fi
 
 	# Wait until the LTE module is reconnected
-	echo "Waiting until the LTE module is reconnected..." | tee -a $logFile
+	echo -e "\t Waiting until the LTE module is reconnected..." | tee -a $logFile
 	while true
 	do
     	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
@@ -783,20 +649,20 @@ probe_camera_and_lte_connections()
     	sleep $samplingPeriodSec
 	done
 
-	echo "LTE module is reconnected!" | tee -a $logFile
+	echo -e "\t LTE module is reconnected!" | tee -a $logFile
 	#sleep 10
 }
 
 # Start recording
 camera_start_recording()
 {
-	echo "r" >> $gst_cmds_file
+	echo $cam_start_rec_cmd >> $gst_cmds_file
 }
 
 # Stop recording
 camera_stop_recording()
 {
-	echo "s" >> $gst_cmds_file
+	echo $cam_stop_rec_cmd >> $gst_cmds_file
 }
 
 # Start the camera
@@ -809,7 +675,7 @@ camera_start()
 camera_stop()
 {
 	# This command will also stop the gstreamer-autostart service
-	echo "q" >> $gst_cmds_file
+	echo $cam_quit_service_cmd >> $gst_cmds_file
 }
 
 # Stop the camera by terminating the gstreamer-autostart service
@@ -818,16 +684,70 @@ camera_force_stop()
 	service gstreamer-autostart stop
 }
 
+# Start MAVProxy
+start_mavproxy()
+{
+	# Check if MAVProxy has already been started
+	service_started=$(service mavproxy-autostart status | grep -i "active:" | grep -i "running")
+	if [ -z "$service_started" ]
+	then
+		echo "Checking MAVProxy prerequisites..." | tee -a $logFile
+		check_mavproxy_prerequisites
+		echo "Starting MAVProxy..." | tee -a $logFile
+
+		while true
+		do
+			service mavproxy-autostart start
+
+			if [ $? -eq 0 ]
+			then
+				echo "MAVProxy started." | tee -a $logFile
+				break
+			else
+				echo "MAVProxy starting failed. Retrying..." | tee -a $logFile
+				service mavproxy-autostart stop
+				sleep $samplingPeriodSec
+			fi
+		done
+	else
+		echo "MAVProxy has already been started!" | tee -a $logFile
+	fi
+
+	# Starting MAVProxy related services
+	service_started=$(service update-uav-latest-status status | grep -i "active:" | grep -i "running")
+	if [ -z "$service_started" ]
+	then
+		service update-uav-latest-status start
+		echo "Started UAV status update service." | tee -a $logFile
+	else
+		echo "UAV status update service has already been started!" | tee -a $logFile
+	fi
+}
+
+# Restart MAVProxy
+restart_mavproxy()
+{
+	service mavproxy-autostart restart
+}
+
 ### MAIN SCRIPT STARTS HERE ###
 
 # SCRIPT PARAMETERS
 nw_setup_file="/etc/default/network-watchdog-setup"
 mw_setup_file="/etc/default/modem-watchdog-setup"
 gst_setup_file="/etc/default/gstreamer-setup"
+mavproxy_setup_file="/etc/default/mavproxy-setup"
+openvpn_setup_file="/etc/default/openvpn-setup"
+webpage_nw_log_file="/var/www/html/network-watchdog"
 Disconnected=0
 Reconnecting=1
 Connected=2
+chmod_port=$(grep -i local_port_chmod $mavproxy_setup_file | awk -F'"' '{print $2}')
+chmod_baudrate=$(grep -i device_baud $mavproxy_setup_file | awk -F'"' '{print $2}')
 gst_cmds_file=$(grep -i cmd_file $gst_setup_file | awk -F'"' '{print $2}')
+cam_start_rec_cmd=$(grep -i CAMERA_START_REC_HOTKEY $gst_setup_file | awk -F'"' '{print $2}')
+cam_stop_rec_cmd=$(grep -i CAMERA_STOP_REC_HOTKEY $gst_setup_file | awk -F'"' '{print $2}')
+cam_quit_service_cmd=$(grep -i CAMERA_QUIT_SERVICE_HOTKEY $gst_setup_file | awk -F'"' '{print $2}')
 video_device=$(grep -i capture_dev $gst_setup_file | awk -F'"' '{print $2}')
 rec_destination_dev=$(grep -i rec_destination_dev $gst_setup_file | awk -F'"' '{print $2}')
 lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'=' '{print $2}')
@@ -843,12 +763,11 @@ logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" $nw_setup
 auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" $nw_setup_file | awk -F'=' '{print $2}')
 auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" $nw_setup_file | awk -F'=' '{print $2}')
 set_max_cpu_gpu_emc_clocks=$(grep -i "SET_MAX_CPU_GPU_EMC_CLOCKS" $nw_setup_file | awk -F'=' '{print $2}')
-armedDisarmedStatusFile=$(grep -i "VEHICLE_ARMED_DISARMED_STATUS_FILE" $nw_setup_file | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
 max_pref_wifi_con_count=10 # Final value of the preffered wifi connection scan counter after which the mobile network is selected
-min_wifi_con_name_length=3 # Minimum number of characters in the WIFI connection name
+min_wifi_con_name_length=2 # Minimum number of characters in the WIFI connection name
 max_wifi_disable_cnt=10 # Final value of the wifi disable count after which wifi disable attemts are canceled
 samplingPeriodSec=2 # Time interval in which the network status is re-evaluated, [sec]
 media_devices_count=0
@@ -857,12 +776,11 @@ logHistoryFile=""
 lteDeviceName=""
 mobileConnectionName=""
 mobileInterfaceName=""
-vehicle_armed=""
-prev_vehicle_armed=""
-networkStatus=0
+networkStatus=$Reconnecting
 vpn_con_count=0
 net_con_count=0
 ip_address_wait_count=0
+ip_address_wait_timout_occured=0
 pref_wifi_con_count=0
 wifiNetworkSelected=0
 lteNetworkSelected=0
@@ -896,20 +814,6 @@ else
 	fi
 fi
 
-# Check the vehicle armed/disarmed status file
-if [ ! -f $armedDisarmedStatusFile ]
-then
-	# The vehicle armed/disarmed status file does not exist - create it - the vehicle is initially disarmed
-	echo "DISARMED" > $armedDisarmedStatusFile
-fi
-
-# Initialize the vehicle armed variables
-update_vehicle_armed_status
-prev_vehicle_armed=$vehicle_armed
-
-# Initialize script variables
-init_variables
-
 # Check if a keyboard is connected
 check_keyboard_connected
 
@@ -942,8 +846,19 @@ fi
 # Check if media devices are connected
 check_media_devices_connected
 
+# Start MAVProxy
+start_mavproxy
+
 # Start using camera immediately if detected
-if [ ! -z "$camDetected" ] && [ $hmiDetected -eq 0 ];
+cam_service_started=$(service gstreamer-autostart status | grep -i "active:" | grep -i "running")
+if [ ! -z "$cam_service_started" ]
+then
+	echo "Camera connected. Gstreamer already started!" | tee -a $logFile
+	camera_and_lte_connections_probed=1
+	camConnected=1
+fi
+
+if [ $camConnected -eq 0 ] && [ ! -z "$camDetected" ] && [ $hmiDetected -eq 0 ];
 then
 	if [ $camera_and_lte_connections_probed -eq 0 ]
 	then
@@ -975,8 +890,7 @@ do
 		if [ -z "$interfaceListed" ]
 		then
 			mobileConnectionState=""
-			echo "Network interface unavailable!"
-			printf "\t Network interface %s unavailable!\n" "$wifiInterfaceName" | tee -a $logFile $logHistoryFile > /dev/null
+			printf "\t Network interface %s unavailable!\n" "$wifiInterfaceName" | tee -a $logFile $logHistoryFile
 		else
 			# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
 			mobileConnectionState=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
@@ -991,8 +905,7 @@ do
 			if [ ! -z "$lteDeviceNameNew" ] && [ "$lteDeviceName" != "$lteDeviceNameNew" ];
 			then
 				lteDeviceName=$lteDeviceNameNew
-				echo "LTE device name changed to $lteDeviceName!"
-				printf "\t LTE device name changed to %s!\n" "$lteDeviceName" | tee -a $logFile $logHistoryFile > /dev/null
+				printf "\t LTE device name changed to %s!\n" "$lteDeviceName" | tee -a $logFile $logHistoryFile
 			fi
 		fi
 
@@ -1001,8 +914,7 @@ do
 		if [ -z "$interfaceListed" ]
 		then
 			mobileConnectionState=""
-			echo "Network interface unavailable!"
-			printf "\t Network interface %s unavailable!\n" "$lteDeviceName" | tee -a $logFile $logHistoryFile > /dev/null
+			printf "\t Network interface %s unavailable!\n" "$lteDeviceName" | tee -a $logFile $logHistoryFile
 		else
 			mobileConnectionState=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
 		fi
@@ -1018,7 +930,6 @@ do
 	then
 		# Mobile network is disconnected
 		nowTime=$(date +"%T")
-		echo "Network disconnected!"
 
 		if [ $networkStatus -ne $Disconnected ]
 		then
@@ -1032,15 +943,13 @@ do
 		if [ $net_con_count -gt $max_net_con_count ]
 		then
 			nowTime=$(date +"%T")
-			echo "Scanning for connection" "$mobileConnectionName" "..."
-			printf "%s Scanning for connection %s...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
+			printf "%s Scanning for connection %s...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile
 			connectionFound=$(nmcli connection | grep -i -o "$mobileConnectionName")
 
 			if [ ! -z "$connectionFound" ] && [ ! -z "$interfaceListed" ];
 			then
 				nowTime=$(date +"%T")
-				echo "Connetion" "$mobileConnectionName" "found. Attempting connection..."
-				printf "%s Connection %s found. Attempting connection...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Connection %s found. Attempting connection...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile
 				nmcli connection up "$mobileConnectionName"
 				ip_address_wait_timout_occured=0
 				net_con_count=0
@@ -1048,8 +957,7 @@ do
 				continue
 			else
 				nowTime=$(date +"%T")
-				echo "Connetion" "$mobileConnectionName" "not found. Retrying..."
-				printf "%s Connection %s not found. Retrying...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Connection %s not found. Retrying...\n" $nowTime "$mobileConnectionName" | tee -a $logFile $logHistoryFile
 			fi
 
 			net_con_count=0
@@ -1058,49 +966,40 @@ do
 		# If a wifi connection was selected then switch to LTE connection ------------------
 		if [ $wifiNetworkSelected -eq 1 ]
 		then
-			echo "Check if the LTE module is connected..."
-			printf "\t Check if the LTE module is connected...\n" | tee -a $logFile $logHistoryFile > /dev/null
+			printf "\t Check if the LTE module is connected...\n" | tee -a $logFile $logHistoryFile
 			lteConnected=$(lsusb | grep -i "$lteManufacturerName")
 
 			if [ ! -z "$lteConnected" ]
 			then
 				# LTE module is connected - get the associated device name
 				lteDeviceName=$(nmcli device | grep -m1 gsm | awk -F' ' '{print $1}')
-				echo "LTE module" "$lteManufacturerName" "connected. Getting device name..."
-				printf "\t LTE module %s connected. Getting device name...\n" "$lteManufacturerName" | tee -a $logFile $logHistoryFile > /dev/null
+				printf "\t LTE module %s connected. Getting device name...\n" "$lteManufacturerName" | tee -a $logFile $logHistoryFile
 
 				if [ -z "$lteDeviceName" ]
 				then
-					echo "Failed initializing LTE device name. Process restarting..."
-					printf "\t Failed initializing LTE device name. Process restarting...\n" | tee -a $logFile $logHistoryFile > /dev/null
+					printf "\t Failed initializing LTE device name. Process restarting...\n" | tee -a $logFile $logHistoryFile
 					sleep $samplingPeriodSec
 					continue
 				fi
 
-				echo "LTE module" "$lteManufacturerName" "connected. Device name:" "$lteDeviceName"
-				printf "\t LTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" | tee -a $logFile $logHistoryFile > /dev/null
-
+				printf "\t LTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" | tee -a $logFile $logHistoryFile
 				lteDeviceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "una")
 
 				if [ ! -z "$lteDeviceUnavailable" ]
 				then
-					echo "LTE device is not available. Check the SIM card!"
-					printf "\t LTE device is not available. Check the SIM card!\n" | tee -a $logFile $logHistoryFile > /dev/null
+					printf "\t LTE device is not available. Check the SIM card!\n" | tee -a $logFile $logHistoryFile
 				else
 					# LTE device is available - get the mobile connection name
 					mobileConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 gsm | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
-					echo "LTE interface name is set to" "$lteInterfaceName"
-					printf "\t LTE interface name is set to %s.\n" "$lteInterfaceName" | tee -a $logFile $logHistoryFile > /dev/null
+					printf "\t LTE interface name is set to %s.\n" "$lteInterfaceName" | tee -a $logFile $logHistoryFile
 					mobileInterfaceName=$lteInterfaceName
 					wifiNetworkSelected=0
 					lteNetworkSelected=1
-					echo "Preffered mobile connection" "$mobileConnectionName" "found!"
-					printf "\t Preffered mobile connection %s found!\n" "$mobileConnectionName" | tee -a $logFile $logHistoryFile > /dev/null
+					printf "\t Preffered mobile connection %s found!\n" "$mobileConnectionName" | tee -a $logFile $logHistoryFile
 					net_con_count=$max_net_con_count
 				fi
 			else
-				echo "LTE module is not connected!"
-				printf "\t LTE module is not connected!\n" | tee -a $logFile $logHistoryFile > /dev/null
+				printf "\t LTE module is not connected!\n" | tee -a $logFile $logHistoryFile
 			fi
 		fi
 
@@ -1115,8 +1014,7 @@ do
 
 		if [ ! -z "$networkInterfaceUnavailable" ]
 		then
-			echo "Network interface unavailable!"
-			printf "\t Network interface %s unavailable!\n" "$networkInterfaceUnavailableName" | tee -a $logFile $logHistoryFile > /dev/null
+			printf "\t Network interface %s unavailable!\n" "$networkInterfaceUnavailableName" | tee -a $logFile $logHistoryFile
 			net_con_count=$max_net_con_count
 			sleep $samplingPeriodSec
 			continue
@@ -1136,14 +1034,12 @@ do
 
 				if [ -z "$mobileIpAddress" ]
 				then
-					echo "Waiting for IP address..."
-					printf "\t Waiting for IP address...\n" | tee -a $logFile $logHistoryFile > /dev/null
+					printf "\t Waiting for IP address...\n" | tee -a $logFile $logHistoryFile
 					ip_address_wait_count=$((ip_address_wait_count+1))
 
 					if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 					then
-						echo "Waiting for IP address timeout. Disconnecting from network..."
-						printf "\t Waiting for IP address timeout. Disconnecting from network...\n" | tee -a $logFile $logHistoryFile > /dev/null
+						printf "\t Waiting for IP address timeout. Disconnecting from network...\n" | tee -a $logFile $logHistoryFile
 						network_disconnect
 						process_network_just_disconnected
 						networkStatus=$Disconnected
@@ -1155,22 +1051,19 @@ do
 				else
 					# Switch the LTE interface name
 					mobileInterfaceName=$lteInterfaceNameAlt
-					echo "LTE interface name switched from" "$lteInterfaceName" "to" "$lteInterfaceNameAlt"
-					printf "\t LTE interface name switched from %s to %s.\n" "$lteInterfaceName" "$lteInterfaceNameAlt" | tee -a $logFile $logHistoryFile > /dev/null
+					printf "\t LTE interface name switched from %s to %s.\n" "$lteInterfaceName" "$lteInterfaceNameAlt" | tee -a $logFile $logHistoryFile
 
 					# Swap the main and alternative LTE interfaces 
 					lteInterfaceNameAlt=$lteInterfaceName
 					lteInterfaceName=$mobileInterfaceName
 				fi
 			else
-				echo "Waiting for IP address..."
-				printf "\t Waiting for IP address...\n" | tee -a $logFile $logHistoryFile > /dev/null
+				printf "\t Waiting for IP address...\n" | tee -a $logFile $logHistoryFile
 				ip_address_wait_count=$((ip_address_wait_count+1))
 
 				if [ $ip_address_wait_count -gt $max_ip_address_wait_count ]
 				then
-					echo "Waiting for IP address timeout. Disconnecting from network..."
-					printf "\t Waiting for IP address timeout. Disconnecting from network...\n" | tee -a $logFile $logHistoryFile > /dev/null
+					printf "\t Waiting for IP address timeout. Disconnecting from network...\n" | tee -a $logFile $logHistoryFile
 					network_disconnect
 					process_network_just_disconnected
 					networkStatus=$Disconnected
@@ -1189,15 +1082,12 @@ do
 				# Update the wifi interface name
 				wifiInterfaceName=$(nmcli device | grep wifi | grep "$mobileConnectionName" | awk -F' ' '{print $1}')
 				mobileInterfaceName=$wifiInterfaceName
-				echo "Wifi interface set to $wifiInterfaceName"
-				printf "\t Wifi interface set to %s\n" $wifiInterfaceName | tee -a $logFile $logHistoryFile > /dev/null
+				printf "\t Wifi interface set to %s\n" $wifiInterfaceName | tee -a $logFile $logHistoryFile
 			fi
 
 			nowTime=$(date +"%T")
-			echo "Network is now connected!" "Mobile IP:" "$mobileIpAddress"
-			echo "Starting the VPN service..."
-			printf "%s Network is now connected! Mobile IP: %s\n" $nowTime $mobileIpAddress | tee -a $logFile $logHistoryFile > /dev/null
-			printf "%s Starting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+			printf "%s Network is now connected! Mobile IP: %s\n" $nowTime $mobileIpAddress | tee -a $logFile $logHistoryFile
+			printf "%s Starting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile
 
 			service openvpn-autostart start
 			networkStatus=$Reconnecting
@@ -1216,38 +1106,27 @@ do
 
 				# The VPN service is restarted when VPN connection is lost without losing mobile network connectivity
 				networkStatus=$Reconnecting
-				echo "VPN connection lost."
-				echo "Stopping MAVProxy..."
-				printf "%s VPN connection lost. Stopping MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-
-				service update-uav-latest-status stop
-				service mavproxy-autostart stop
-				sleep 2
-				nowTime=$(date +"%T")
+				printf "%s VPN connection lost!\n" $nowTime | tee -a $logFile $logHistoryFile
 
 				if [ $auto_switch_to_loiter -eq 1 ]
 				then
-					echo "Switching to LOITER mode..."
-					printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-					/usr/local/bin/chmod_offline.py loiter | tee -a $logFile $logHistoryFile > /dev/null
+					printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile
+					/usr/local/bin/chmod_offline.py $chmod_port $chmod_baudrate loiter | tee -a $logFile $logHistoryFile
 				else
-					echo "Auto switching to LOITER mode is disabled!"
-					printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+					printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 				fi
 
 				nowTime=$(date +"%T")
 
 				if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $auto_switch_to_rtl -eq 1 ];
 				then
-					echo "Starting switch to RTL service..."
-					printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+					printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile
 					service switch-to-rtl start
 					switch_to_RTL_mode_service_started=1
 				else
 					if [ $auto_switch_to_rtl -eq 0 ]
 					then
-						echo "Auto switching to RTL mode is disabled!"
-						printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+						printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 					fi
 				fi
 
@@ -1255,28 +1134,21 @@ do
 				#if [ $camConnected -eq 1 ]
 				#then
 				#	nowTime=$(date +"%T")
-				#	service gstreamer-autostart stop
-				#	echo "GStreamer stopped."
-				#	printf "%s GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 				#fi
 
 				nowTime=$(date +"%T")
-				echo "Restarting the VPN service..."
-				printf "%s Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile
 				service openvpn-autostart stop
 				sleep 2
 				service openvpn-autostart start
 				vpn_con_count=0
 			fi
 
-			echo "Connecting to VPN..."
-
 			vpn_con_count=$((vpn_con_count+1))
 			if [ $vpn_con_count -gt $max_vpn_con_count ]
 			then
 				nowTime=$(date +"%T")
-				echo "Restarting the VPN service..."
-				printf "%s Connection timeout. Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Connection timeout. Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile
 				service openvpn-autostart stop
 				sleep 2
 				service openvpn-autostart start
@@ -1289,57 +1161,33 @@ do
 
 			if [ $oct1 -eq 192 ] && [ $oct2 -eq 168 ];
 			then
-				echo "VPN connected!" "VPN IP:" "$vpnIpAddress" "Mobile IP:" "$mobileIpAddress"
-
 				if [ $networkStatus -ne $Connected ]
 				then
 					nowTime=$(date +"%T")
-					printf "%s VPN connected! VPN IP: %s Mobile IP: %s\n" $nowTime $vpnIpAddress $mobileIpAddress | tee -a $logFile $logHistoryFile > /dev/null
+					printf "%s VPN connected! VPN IP: %s Mobile IP: %s\n" $nowTime $vpnIpAddress $mobileIpAddress | tee -a $logFile $logHistoryFile
 					networkStatus=$Connected
-					echo "Starting MAVProxy..."
-					printf "%s Starting MAVProxy...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-					service mavproxy-autostart start
 
-					if [ $? -eq 0 ]
+					if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ $auto_switch_to_rtl -eq 1 ];
 					then
 						nowTime=$(date +"%T")
-						echo "MAVProxy started."
-						printf "%s MAVProxy started.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-
-						if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ $auto_switch_to_rtl -eq 1 ];
-						then
-							nowTime=$(date +"%T")
-							echo "Stopping switch to RTL service."
-							printf "%s Stopping switch to RTL service.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-							service switch-to-rtl stop
-							switch_to_RTL_mode_service_started=0
-						fi
-
-						service update-uav-latest-status start
-						nowTime=$(date +"%T")
-						echo "Started UAV status update service."
-						printf "%s Started UAV status update service.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-					else
-						nowTime=$(date +"%T")
-						echo "MAVProxy starting failed. Restarting..."
-						printf "%s MAVProxy starting failed. Restarting...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
-						service mavproxy-autostart stop
-						networkStatus=$Reconnecting
+						printf "%s Stopping switch to RTL service.\n" $nowTime | tee -a $logFile $logHistoryFile
+						service switch-to-rtl stop
+						switch_to_RTL_mode_service_started=0
 					fi
-					
+
+					nowTime=$(date +"%T")
+					printf "%s Restarting MAVProxy.\n" $nowTime | tee -a $logFile $logHistoryFile
+					restart_mavproxy
+
 					# TODO: If dynamic gstreamer pipeline is created signal it to start the streaming branch 
 					#if [ $camConnected -eq 1 ]
 					#then
-					#	service gstreamer-autostart start
 					#	nowTime=$(date +"%T")
-					#	echo "GStreamer started."
-					#	printf "%s GStreamer started.\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
 					#fi
 				fi
 			else
 				nowTime=$(date +"%T")
-				echo "Error! VPN connected but IP address invalid. Restarting the VPN service..."
-				printf "%s Error! VPN connected but IP address invalid. Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile > /dev/null
+				printf "%s Error! VPN connected but IP address invalid. Restarting the VPN service...\n" $nowTime | tee -a $logFile $logHistoryFile
 
 				# Restart the VPN service
 				service openvpn-autostart stop
@@ -1363,7 +1211,7 @@ do
 	fi
 
 	# Copy the current log file within the XOSS webpage root directory
-	cp $logFile /var/www/html/network-watchdog
+	cp $logFile $webpage_nw_log_file
 
 	sleep $samplingPeriodSec
 done
