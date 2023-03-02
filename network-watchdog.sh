@@ -411,7 +411,7 @@ network_connect()
 					exit 0
 				fi
 
-				echo "#PATH TO THE OPENVPN CONFIGURATION FILE" > $openvpn_setup_file
+				echo "# PATH TO THE OPENVPN CONFIGURATION FILE" > $openvpn_setup_file
 				echo CONFIG_FILE_PATH=\"$ovpn_config_file\" >> $openvpn_setup_file
 				echo "$nowTime Starting the VPN service..." | tee -a $logFile
 				printf "\t VPN configuration file set to %s\n" $ovpn_config_file >> $logFile
@@ -492,8 +492,7 @@ process_network_just_disconnected()
 
 	if [ $wifiNetworkSelected -eq 1 ]
 	then
-		echo "Attempting to switch to LTE connection mode..."
-		printf "\t Attempting to switch to LTE connection mode...\n" | tee -a $logFile $logHistoryFile > /dev/null
+		printf "\t Attempting to switch to LTE connection mode...\n" | tee -a $logFile $logHistoryFile
 	fi
 }
 
@@ -512,7 +511,7 @@ disable_wifi()
     	gpio_base=$(cat /sys/kernel/debug/gpio | grep gpiochip0 | awk -F' ' '{print $3}' | awk -F'-' '{print $1}')
 
     	# Write the GPIO base value in the network watchdog setup file
-    	echo "GPIO_BASE=$gpio_base" | tee -a $nw_setup_file > /dev/null
+    	echo "GPIO_BASE=$gpio_base" >> $nw_setup_file
 	fi
 
 	# Get the GPIO base value
