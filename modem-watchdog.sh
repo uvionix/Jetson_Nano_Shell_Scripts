@@ -65,17 +65,17 @@ initialize_case_regular_pwr_en_gpio()
 # Initialization in the case where the modem power enable GPIO is configured as an I2C mux GPIO
 initialize_case_i2c_mux_pwr_en_gpio()
 {
-    echo "I2C bus identifier set to $i2c_bus_identifier" | tee -a $logFile
+    echo "I2C bus identifier set to $PWR_ON_OFF_I2C_BUS_IDENTIFIER" | tee -a $logFile
 
     # Get the I2C bus to select when the modem has to be powered on
-    i2cBusPwrOn=$(i2cdetect -l | grep $i2c_bus_identifier | grep "chan_id 1" | awk -F' ' '{print $1}' | awk -F'-' '{print $2}')
+    i2cBusPwrOn=$(i2cdetect -l | grep $PWR_ON_OFF_I2C_BUS_IDENTIFIER | grep "chan_id 1" | awk -F' ' '{print $1}' | awk -F'-' '{print $2}')
 
     if [ ! -z "$i2cBusPwrOn" ]
     then
         echo "Modem power ON I2C bus set to i2c-$i2cBusPwrOn" | tee -a $logFile
 
         # Get the I2C bus to select when the modem has to be powered off
-        i2cBusPwrOff=$(i2cdetect -l | grep $i2c_bus_identifier | grep "chan_id 0" | awk -F' ' '{print $1}' | awk -F'-' '{print $2}')
+        i2cBusPwrOff=$(i2cdetect -l | grep $PWR_ON_OFF_I2C_BUS_IDENTIFIER | grep "chan_id 0" | awk -F' ' '{print $1}' | awk -F'-' '{print $2}')
 
         if [ ! -z "$i2cBusPwrOff" ]
         then
@@ -126,22 +126,12 @@ PWR_ON_OFF_METHOD_I2C=0
 PWR_ON_OFF_METHOD_REGULAR_GPIO=1
 
 # SCRIPT PARAMETERS
-setup_file="/etc/default/modem-watchdog-setup"
-nw_setup_file="/etc/default/network-watchdog-setup"
-webpage_mw_log_file="/var/www/html/modem-watchdog"
-webpage_mw_status_file="/var/www/html/modem-latest-status"
-
-logFile=$(grep -i "LOG_FILE" $setup_file | awk -F'=' '{print $2}')
+setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}')
+nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}')
 modemManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'=' '{print $2}')
-pwr_en_gpio_offset=$(grep -i "PWR_EN_GPIO_OFFSET" $setup_file | awk -F'=' '{print $2}')
-i2c_bus_identifier=$(grep -i "PWR_ON_OFF_I2C_BUS_IDENTIFIER" $setup_file | awk -F'=' '{print $2}')
-InitPowerOnDelayTimeSec=$(grep -i "PWR_ON_DELAY_SEC" $setup_file | awk -F'=' '{print $2}')
-InitWaitAfterPowerOnSec=$(grep -i "WAIT_AFTER_PWR_ON_SEC" $setup_file | awk -F'=' '{print $2}')
-waitTimeIncrementSec=$(grep -i "WAIT_INCREMENT_SEC" $setup_file | awk -F'=' '{print $2}')
-samplingPeriodSec=$(grep -i "SAMPLE_TIME_SEC" $setup_file | awk -F'=' '{print $2}')
-serviceStartDelaySec=$(grep -i "SERVICE_START_DELAY_SEC" $setup_file | awk -F'=' '{print $2}')
-powerOnDelayTimeSec=$InitPowerOnDelayTimeSec # Power on delay after the power to the modem has been switched off, [sec]
-waitAfterPowerOnSec=$InitWaitAfterPowerOnSec # Wait time after the modem has been powered on before its status is re-evaluated, [sec]
+logFile=$LOG_FILE
+powerOnDelayTimeSec=$PWR_ON_DELAY_SEC # Power on delay after the power to the modem has been switched off, [sec]
+waitAfterPowerOnSec=$WAIT_AFTER_PWR_ON_SEC # Wait time after the modem has been powered on before its status is re-evaluated, [sec]
 lastPowerOnDelayTimeSec=$powerOnDelayTimeSec
 initializationSuccessful=0
 boolModemConnected=0
@@ -157,9 +147,9 @@ pwr_on_of_method=$PWR_ON_OFF_METHOD_I2C
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
 echo "Initializing..." | tee -a $logFile
 
-sleep $serviceStartDelaySec
+sleep $SERVICE_START_DELAY_SEC
 echo "Modem manufacturer name set to $modemManufacturerName" | tee -a $logFile
-echo "Power enable GPIO offset set to $pwr_en_gpio_offset" | tee -a $logFile
+echo "Power enable GPIO offset set to $PWR_EN_GPIO_OFFSET" | tee -a $logFile
 
 # Check if the GPIO base value has already been configured - if not configure it
 gpio_base_configured=$(grep -i "GPIO_BASE" $setup_file)
@@ -179,7 +169,7 @@ gpio_base=$(grep -i "GPIO_BASE" $setup_file | awk -F'=' '{print $2}')
 echo "GPIO base value set to $gpio_base" | tee -a $logFile
 
 # Calculate the number of the modem power enable GPIO
-modem_pwr_en_gpio=$((gpio_base+$pwr_en_gpio_offset))
+modem_pwr_en_gpio=$((gpio_base+$PWR_EN_GPIO_OFFSET))
 echo "Modem power enable GPIO sysfs value set to $modem_pwr_en_gpio" | tee -a $logFile
 
 # Check if the modem power enable type has already been configured - if not configure it
@@ -227,8 +217,8 @@ do
             boolModemConnected=1
             #printf "Modem connected! Power on wait time = %d sec\n" $lastPowerOnDelayTimeSec >> $logFile
             echo "Modem connected! Waiting for status from modem manager..." | tee -a $logFile
-            powerOnDelayTimeSec=$InitPowerOnDelayTimeSec
-            waitAfterPowerOnSec=$InitWaitAfterPowerOnSec
+            powerOnDelayTimeSec=$PWR_ON_DELAY_SEC
+            waitAfterPowerOnSec=$WAIT_AFTER_PWR_ON_SEC
         fi
 
         if [ -z "$modemPath" ]
@@ -266,13 +256,13 @@ do
         sleep $waitAfterPowerOnSec
         echo "Now checking if the modem is connected..." | tee -a $logFile
         lastPowerOnDelayTimeSec=$powerOnDelayTimeSec
-        powerOnDelayTimeSec=$((powerOnDelayTimeSec+$waitTimeIncrementSec))
-        waitAfterPowerOnSec=$((waitAfterPowerOnSec+$waitTimeIncrementSec))
+        powerOnDelayTimeSec=$((powerOnDelayTimeSec+$WAIT_INCREMENT_SEC))
+        waitAfterPowerOnSec=$((waitAfterPowerOnSec+$WAIT_INCREMENT_SEC))
     fi
 
     # Copy the current log file within the XOSS webpage root directory
-    cp $logFile $webpage_mw_log_file
-    tail -1 $logFile > $webpage_mw_status_file
+    cp $logFile $WEBPAGE_MW_LOG_FILE
+    tail -1 $logFile > $WEBPAGE_MW_STATUS_FILE
 
-    sleep $samplingPeriodSec
+    sleep $SAMPLE_TIME_SEC
 done

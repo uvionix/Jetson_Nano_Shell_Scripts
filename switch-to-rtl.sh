@@ -5,8 +5,8 @@
 # The time period is in seconds.
 ##########################
 
-nw_setup_file="/etc/default/network-watchdog-setup"
-mavproxy_setup_file="/etc/default/mavproxy-setup"
+nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}')
+mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autostart.service | awk -F'=' '{print $2}')
 
 logFile=$(grep -i "LOG_FILE" $nw_setup_file | awk -F'=' '{print $2}')
 logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" $nw_setup_file | awk -F'=' '{print $2}')
@@ -14,7 +14,7 @@ logHistoryFile=$(cat $logHistoryFilepathContainer)
 chmod_port=$(grep -i local_port_chmod $mavproxy_setup_file | awk -F'"' '{print $2}')
 chmod_baudrate=$(grep -i device_baud $mavproxy_setup_file | awk -F'"' '{print $2}')
 
-sleep_count=$1
+sleep_count=$TIMOUT
 
 printf "\t Switch to RTL service started! Switching after %d seconds.\n" $sleep_count | tee -a $logFile $logHistoryFile
 

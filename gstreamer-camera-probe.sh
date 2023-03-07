@@ -1,37 +1,16 @@
 #!/bin/bash
 
-# Setup file
-setup_file="/etc/default/gstreamer-setup"
-
-# Get the capture device parameter
-capture_dev=$(grep -i capture_dev $setup_file | awk -F'"' '{print $2}')
-
-# Get the input pixel format
-in_pix_fmt=$(grep -i in_pix_fmt $setup_file | awk -F'"' '{print $2}')
-
-# Get the output pixel format
-out_pix_fmt=$(grep -i out_pix_fmt $setup_file | awk -F'"' '{print $2}')
-
-# Get the streaming qp range
-stream_qp_range=$(grep -i stream_qp_range $setup_file | awk -F'"' '{print $2}')
-
-# Get the stream MTU
-stream_mtu=$(grep -i stream_mtu $setup_file | awk -F'"' '{print $2}')
-
-# Get the recording qp range
-rec_qp_range=$(grep -i rec_qp_range $setup_file | awk -F'"' '{print $2}')
-
 # Get the stream resolution parameters
-stream_res_width=$(grep -i stream_res_w $setup_file | awk -F'"' '{print $2}')
-stream_res_height=$(grep -i stream_res_h $setup_file | awk -F'"' '{print $2}')
+stream_res_width=$STREAM_RES_W
+stream_res_height=$STREAM_RES_H
 
 # Get the display resolution parameters
-disp_res_width=$(grep -i disp_res_w $setup_file | awk -F'"' '{print $2}')
-disp_res_height=$(grep -i disp_res_h $setup_file | awk -F'"' '{print $2}')
+disp_res_width=$OVERLAY_RES_W
+disp_res_height=$OVERLAY_RES_H
 
 # Get the record resolution parameters
-rec_res_width=$(grep -i rec_res_w $setup_file | awk -F'"' '{print $2}')
-rec_res_height=$(grep -i rec_res_h $setup_file | awk -F'"' '{print $2}')
+rec_res_width=$REC_RES_W
+rec_res_height=$REC_RES_H
 
 # Calculate the max resolution parameters
 if [ $disp_res_height -gt $rec_res_height ]
@@ -50,9 +29,6 @@ then
     stream_res_height=$max_res_height
 fi
 
-# Get a username
-usrname=$(getent passwd | awk -F: "{if (\$3 >= $(awk '/^UID_MIN/ {print $2}' /etc/login.defs) && \$3 <= $(awk '/^UID_MAX/ {print $2}' /etc/login.defs)) print \$1}" | head -1)
-
 # Start the probing pipeline
-/usr/bin/gst-launch-1.0 v4l2src device=$capture_dev ! "video/x-raw, format=(string)$in_pix_fmt, width=(int)$max_res_width, height=(int)$max_res_height" ! queue \
-! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$out_pix_fmt" ! nvoverlaysink overlay-x=0 overlay-y=0 overlay-w=$stream_res_width overlay-h=$stream_res_height sync=false
+/usr/bin/gst-launch-1.0 v4l2src device=$CAPTURE_DEV ! "video/x-raw, format=(string)$IN_PIX_FMT, width=(int)$max_res_width, height=(int)$max_res_height" ! queue \
+! nvvidconv ! "video/x-raw(memory:NVMM), width=(int)$stream_res_width, height=(int)$stream_res_height, format=(string)$OUT_PIX_FMT" ! nvoverlaysink overlay-x=$OVERLAY_POS_X overlay-y=$OVERLAY_POS_Y overlay-w=$stream_res_width overlay-h=$stream_res_height sync=false

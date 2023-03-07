@@ -28,7 +28,7 @@ check_keyboard_connected()
 
 	printf "Keyboard not detected. LTE connection type is selected.\n" | tee -a $logFile
 
-	if [ $disable_wifi_if_lte_net_selected -eq 1 ]
+	if [ $DISABLE_WIFI_IF_LTE_NETWORK_IS_SELECTED -eq 1 ]
 	then
 		disable_wifi
 	fi
@@ -251,7 +251,7 @@ choose_connection_type()
 			else
 				pref_wifi_con_count=$((pref_wifi_con_count+1))
 				echo "Invalid WIFI connection name" "$wifiConnectionName" "obtained. Connection name must be at least" "$min_wifi_con_name_length" "characters long!" | tee -a $logFile
-				sleep $samplingPeriodSec
+				sleep $SAMPLING_PERIOD_SEC
 
 				if [ $pref_wifi_con_count -le $max_pref_wifi_con_count ]
 				then
@@ -274,13 +274,13 @@ choose_connection_type()
 				fi
 
 				lteNetworkSelected=1
-				lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+				lteConnected=$(lsusb | grep -i "$LTE_MANUFACTURER_NAME")
 
 				if [ ! -z "$lteConnected" ]
 				then
 					# LTE module is connected - get the associated device name
 					lteDeviceName=$(nmcli device | grep -m1 gsm | awk -F' ' '{print $1}')
-					echo "LTE module" "$lteManufacturerName" "connected. Getting device name..." | tee -a $logFile
+					echo "LTE module $LTE_MANUFACTURER_NAME connected. Getting device name..." | tee -a $logFile
 
 					if [ -z "$lteDeviceName" ]
 					then
@@ -291,11 +291,11 @@ choose_connection_type()
 							lteNetworkSelected=0
 						fi
 
-						sleep $samplingPeriodSec
+						sleep $SAMPLING_PERIOD_SEC
 						continue
 					fi
 
-					echo "LTE module" "$lteManufacturerName" "connected. Device name:" "$lteDeviceName" | tee -a $logFile
+					echo "LTE module $LTE_MANUFACTURER_NAME connected. Device name:" "$lteDeviceName" | tee -a $logFile
 					
 					lteDeviceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "una")
 
@@ -341,7 +341,7 @@ choose_connection_type()
 			break
 		fi
 
-		sleep $samplingPeriodSec
+		sleep $SAMPLING_PERIOD_SEC
 	done
 }
 
@@ -384,7 +384,7 @@ network_connect()
 				echo "Date and time set to $nowDate $nowTime" | tee -a $logFile
 				printf "============= %s %s STARTING LOG FILE =============\n" $nowDate $nowTime >> $logFile
 
-				if [ $set_max_cpu_gpu_emc_clocks -eq 1 ]
+				if [ $SET_MAX_CPU_GPU_EMC_CLOCKS -eq 1 ]
 				then
 					# Set static max frequency to CPU, GPU and EMC clocks
 					echo "$nowTime Setting static max frequency to CPU, GPU and EMC clocks..." | tee -a $logFile
@@ -394,12 +394,12 @@ network_connect()
 				fi
 
 				# Generate the filepath for the log history file
-				mkdir -p $logHistoryDir
-				logHistoryFile=$logHistoryDir$(date +"%Y-%m-%d-%T")
+				mkdir -p $LOG_HISTORY_DIR
+				logHistoryFile=$LOG_HISTORY_DIR$(date +"%Y-%m-%d-%T")
 				logHistoryFileGenerated=1
 
 				# Copy the filepath to an interface file to be used by other scripts for logging
-				echo $logHistoryFile > $logHistoryFilepathContainer
+				echo $logHistoryFile > $LOG_HISTORY_FILEPATH_CONTAINER
 
 				# Update the VPN configuration file
 				nowTime=$(date +"%T")
@@ -427,7 +427,7 @@ network_connect()
 			fi
 		fi
 
-		sleep $samplingPeriodSec
+		sleep $SAMPLING_PERIOD_SEC
 	done
 }
 
@@ -460,7 +460,7 @@ process_network_just_disconnected()
 	service openvpn-autostart stop
 	nowTime=$(date +"%T")
 		
-	if [ $auto_switch_to_loiter -eq 1 ]
+	if [ $AUTO_SWITCH_TO_LOITER -eq 1 ]
 	then
 		printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile
 		/usr/local/bin/chmod_offline.py $chmod_port $chmod_baudrate loiter | tee -a $logFile $logHistoryFile
@@ -470,13 +470,13 @@ process_network_just_disconnected()
 			
 	nowTime=$(date +"%T")
 
-	if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $auto_switch_to_rtl -eq 1 ];
+	if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $AUTO_SWITCH_TO_RTL -eq 1 ];
 	then
 		printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile
 		service switch-to-rtl start
 		switch_to_RTL_mode_service_started=1
 	else
-		if [ $auto_switch_to_rtl -eq 0 ]
+		if [ $AUTO_SWITCH_TO_RTL -eq 0 ]
 		then
 			printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 		fi
@@ -519,7 +519,7 @@ disable_wifi()
 	echo "GPIO base value set to $gpio_base" | tee -a $logFile
 
 	# Calculate the number of the wifi disable GPIO
-	wifi_disable_gpio=$((gpio_base+$wifi_disable_gpio_offset))
+	wifi_disable_gpio=$((gpio_base+$WIFI_DISABLE_GPIO_OFFSET))
 
 	# Export the GPIO if it is not exported
 	regular_gpioNumber="gpio$wifi_disable_gpio"
@@ -559,7 +559,7 @@ disable_wifi()
 					echo 1 > /sys/class/gpio/$regular_gpioNumber/value
 				fi
 
-				sleep $samplingPeriodSec
+				sleep $SAMPLING_PERIOD_SEC
 			fi
 
 			wifi_disable_cnt=$((wifi_disable_cnt+1))
@@ -581,14 +581,14 @@ probe_camera_and_lte_connections()
 	echo -e "\t Waiting until the LTE module is connected..." | tee -a $logFile
 	while true
 	do
-    	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+    	lteConnected=$(lsusb | grep -i "$LTE_MANUFACTURER_NAME")
 
     	if [ ! -z "$lteConnected" ]
     	then
         	break
     	fi
 
-    	sleep $samplingPeriodSec
+    	sleep $SAMPLING_PERIOD_SEC
 	done
 
 	# LTE module is connected - probe the camera connection
@@ -600,7 +600,7 @@ probe_camera_and_lte_connections()
 	echo -e "\t Waiting to see if the LTE module will be disconnected as a result of the camera probing..." | tee -a $logFile
 	while true
 	do
-    	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+    	lteConnected=$(lsusb | grep -i "$LTE_MANUFACTURER_NAME")
 
     	if [ -z "$lteConnected" ]
     	then
@@ -617,7 +617,7 @@ probe_camera_and_lte_connections()
         	break
     	fi
 
-    	sleep $samplingPeriodSec
+    	sleep $SAMPLING_PERIOD_SEC
 	done
 
 	# Stop camera probing
@@ -633,7 +633,7 @@ probe_camera_and_lte_connections()
 	echo -e "\t Waiting until the LTE module is reconnected..." | tee -a $logFile
 	while true
 	do
-    	lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+    	lteConnected=$(lsusb | grep -i "$LTE_MANUFACTURER_NAME")
 
     	if [ ! -z "$lteConnected" ]
     	then
@@ -645,7 +645,7 @@ probe_camera_and_lte_connections()
 			fi
     	fi
 
-    	sleep $samplingPeriodSec
+    	sleep $SAMPLING_PERIOD_SEC
 	done
 
 	echo -e "\t LTE module is reconnected!" | tee -a $logFile
@@ -705,7 +705,7 @@ start_mavproxy()
 			else
 				echo "MAVProxy starting failed. Retrying..." | tee -a $logFile
 				service mavproxy-autostart stop
-				sleep $samplingPeriodSec
+				sleep $SAMPLING_PERIOD_SEC
 			fi
 		done
 	else
@@ -732,12 +732,11 @@ restart_mavproxy()
 ### MAIN SCRIPT STARTS HERE ###
 
 # SCRIPT PARAMETERS
-nw_setup_file="/etc/default/network-watchdog-setup"
-mw_setup_file="/etc/default/modem-watchdog-setup"
-gst_setup_file="/etc/default/gstreamer-setup"
-mavproxy_setup_file="/etc/default/mavproxy-setup"
-openvpn_setup_file="/etc/default/openvpn-setup"
-webpage_nw_log_file="/var/www/html/network-watchdog"
+nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}')
+mw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}')
+gst_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/gstreamer-autostart.service | awk -F'=' '{print $2}')
+mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autostart.service | awk -F'=' '{print $2}')
+openvpn_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/openvpn-autostart.service | awk -F'=' '{print $2}')
 Disconnected=0
 Reconnecting=1
 Connected=2
@@ -749,33 +748,23 @@ cam_stop_rec_cmd=$(grep -i CAMERA_STOP_REC_HOTKEY $gst_setup_file | awk -F'"' '{
 cam_quit_service_cmd=$(grep -i CAMERA_QUIT_SERVICE_HOTKEY $gst_setup_file | awk -F'"' '{print $2}')
 video_device=$(grep -i capture_dev $gst_setup_file | awk -F'"' '{print $2}')
 rec_destination_dev=$(grep -i rec_destination_dev $gst_setup_file | awk -F'"' '{print $2}')
-lteManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'=' '{print $2}')
-wifiInterfaceName=$(grep -i "WIFI_INTERFACE_NAME" $nw_setup_file | awk -F'=' '{print $2}')
-wifi_disable_gpio_offset=$(grep -i "WIFI_DISABLE_GPIO_OFFSET" $nw_setup_file | awk -F'=' '{print $2}')
-disable_wifi_if_lte_net_selected=$(grep -i "DISABLE_WIFI_IF_LTE_NETWORK_IS_SELECTED" $nw_setup_file | awk -F'=' '{print $2}')
-lteInterfaceName="usb1"
-lteInterfaceNameAlt="usb0"
-vpnInterfaceName="tun0"
-logFile=$(grep -i "LOG_FILE" $nw_setup_file | awk -F'=' '{print $2}')
-logHistoryDir=$(grep -i "LOG_HISTORY_DIR" $nw_setup_file | awk -F'=' '{print $2}')
-logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" $nw_setup_file | awk -F'=' '{print $2}')
-auto_switch_to_loiter=$(grep -i "AUTO_SWITCH_TO_LOITER" $nw_setup_file | awk -F'=' '{print $2}')
-auto_switch_to_rtl=$(grep -i "AUTO_SWITCH_TO_RTL" $nw_setup_file | awk -F'=' '{print $2}')
-set_max_cpu_gpu_emc_clocks=$(grep -i "SET_MAX_CPU_GPU_EMC_CLOCKS" $nw_setup_file | awk -F'=' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
 max_pref_wifi_con_count=10 # Final value of the preffered wifi connection scan counter after which the mobile network is selected
 min_wifi_con_name_length=2 # Minimum number of characters in the WIFI connection name
 max_wifi_disable_cnt=10 # Final value of the wifi disable count after which wifi disable attemts are canceled
-samplingPeriodSec=2 # Time interval in which the network status is re-evaluated, [sec]
-media_devices_count=0
+logFile=$LOG_FILE
 logHistoryFileGenerated=0
 logHistoryFile=""
+lteInterfaceName=$LTE_INTERFACE_NAME
+lteInterfaceNameAlt=$LTE_INTERFACE_NAME_ALT
+wifiInterfaceName=$WIFI_INTERFACE_NAME
 lteDeviceName=""
 mobileConnectionName=""
 mobileInterfaceName=""
 networkStatus=$Reconnecting
+media_devices_count=0
 vpn_con_count=0
 net_con_count=0
 ip_address_wait_count=0
@@ -790,7 +779,7 @@ schedule_reboot=0
 supported_media_devices_list="$rec_destination_dev|/dev/sd"
 
 > $logFile # Clear the log file
-> $logHistoryFilepathContainer # Clear the log history filepath container
+> $LOG_HISTORY_FILEPATH_CONTAINER # Clear the log history filepath container
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
 echo "Initializing..." | tee -a $logFile
 
@@ -837,7 +826,7 @@ then
 			break
 		fi
 
-		sleep $samplingPeriodSec
+		sleep $SAMPLING_PERIOD_SEC
 		rec_dev_detected_wait_cnt=$((rec_dev_detected_wait_cnt+1))
 	done
 fi
@@ -889,7 +878,7 @@ do
 		if [ -z "$interfaceListed" ]
 		then
 			mobileConnectionState=""
-			printf "\t Network interface %s unavailable!\n" "$wifiInterfaceName" | tee -a $logFile $logHistoryFile
+			printf "\t Network interface %s unavailable!\n" $wifiInterfaceName | tee -a $logFile $logHistoryFile
 		else
 			# mobileConnectionState=$(ip address show dev "$mobileInterfaceName" | grep -i -o "state down")
 			mobileConnectionState=$(nmcli device | grep "$wifiInterfaceName" | awk -F' ' '{print $3}' | grep -E 'discon|unavail')
@@ -952,7 +941,7 @@ do
 				nmcli connection up "$mobileConnectionName"
 				ip_address_wait_timout_occured=0
 				net_con_count=0
-				sleep $samplingPeriodSec
+				sleep $SAMPLING_PERIOD_SEC
 				continue
 			else
 				nowTime=$(date +"%T")
@@ -966,22 +955,22 @@ do
 		if [ $wifiNetworkSelected -eq 1 ]
 		then
 			printf "\t Check if the LTE module is connected...\n" | tee -a $logFile $logHistoryFile
-			lteConnected=$(lsusb | grep -i "$lteManufacturerName")
+			lteConnected=$(lsusb | grep -i "$LTE_MANUFACTURER_NAME")
 
 			if [ ! -z "$lteConnected" ]
 			then
 				# LTE module is connected - get the associated device name
 				lteDeviceName=$(nmcli device | grep -m1 gsm | awk -F' ' '{print $1}')
-				printf "\t LTE module %s connected. Getting device name...\n" "$lteManufacturerName" | tee -a $logFile $logHistoryFile
+				printf "\t LTE module %s connected. Getting device name...\n" $LTE_MANUFACTURER_NAME | tee -a $logFile $logHistoryFile
 
 				if [ -z "$lteDeviceName" ]
 				then
 					printf "\t Failed initializing LTE device name. Process restarting...\n" | tee -a $logFile $logHistoryFile
-					sleep $samplingPeriodSec
+					sleep $SAMPLING_PERIOD_SEC
 					continue
 				fi
 
-				printf "\t LTE module %s connected. Device name: %s.\n" "$lteManufacturerName" "$lteDeviceName" | tee -a $logFile $logHistoryFile
+				printf "\t LTE module %s connected. Device name: %s.\n" $LTE_MANUFACTURER_NAME "$lteDeviceName" | tee -a $logFile $logHistoryFile
 				lteDeviceUnavailable=$(nmcli device | grep "$lteDeviceName" | awk -F' ' '{print $3}' | grep "una")
 
 				if [ ! -z "$lteDeviceUnavailable" ]
@@ -1015,7 +1004,7 @@ do
 		then
 			printf "\t Network interface %s unavailable!\n" "$networkInterfaceUnavailableName" | tee -a $logFile $logHistoryFile
 			net_con_count=$max_net_con_count
-			sleep $samplingPeriodSec
+			sleep $SAMPLING_PERIOD_SEC
 			continue
 		fi
 		# ----------------------------------------------------------------------------------
@@ -1045,7 +1034,7 @@ do
 						ip_address_wait_timout_occured=1
 					fi
 
-					sleep $samplingPeriodSec
+					sleep $SAMPLING_PERIOD_SEC
 					continue
 				else
 					# Switch the LTE interface name
@@ -1069,7 +1058,7 @@ do
 					ip_address_wait_timout_occured=1
 				fi
 
-				sleep $samplingPeriodSec
+				sleep $SAMPLING_PERIOD_SEC
 				continue
 			fi
 		fi
@@ -1094,7 +1083,7 @@ do
 		fi
 
 		# Get the IP address associated with the VPN network interface
-		vpnIpAddress=$(ip address show | grep -A2 $vpnInterfaceName | grep "inet " | awk -F' ' '{print $2}' | awk -F'/' '{print $1}')
+		vpnIpAddress=$(ip address show | grep -A2 $VPN_INTERFACE_NAME | grep "inet " | awk -F' ' '{print $2}' | awk -F'/' '{print $1}')
 
 		if [ -z "$vpnIpAddress" ]
 		then
@@ -1107,7 +1096,7 @@ do
 				networkStatus=$Reconnecting
 				printf "%s VPN connection lost!\n" $nowTime | tee -a $logFile $logHistoryFile
 
-				if [ $auto_switch_to_loiter -eq 1 ]
+				if [ $AUTO_SWITCH_TO_LOITER -eq 1 ]
 				then
 					printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile
 					/usr/local/bin/chmod_offline.py $chmod_port $chmod_baudrate loiter | tee -a $logFile $logHistoryFile
@@ -1117,13 +1106,13 @@ do
 
 				nowTime=$(date +"%T")
 
-				if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $auto_switch_to_rtl -eq 1 ];
+				if [ $switch_to_RTL_mode_service_started -eq 0 ] && [ $AUTO_SWITCH_TO_RTL -eq 1 ];
 				then
 					printf "%s Starting switch to RTL service...\n" $nowTime | tee -a $logFile $logHistoryFile
 					service switch-to-rtl start
 					switch_to_RTL_mode_service_started=1
 				else
-					if [ $auto_switch_to_rtl -eq 0 ]
+					if [ $AUTO_SWITCH_TO_RTL -eq 0 ]
 					then
 						printf "%s Auto switching to RTL mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 					fi
@@ -1155,8 +1144,8 @@ do
 			fi
 		else
 			# VPN IP address found - get the first two octets and check the values
-			oct1=$(ip address show | grep -A2 $vpnInterfaceName | grep "inet " | awk -F' ' '{print $2}' | awk -F'.' '{print $1}')
-			oct2=$(ip address show | grep -A2 $vpnInterfaceName | grep "inet " | awk -F' ' '{print $2}' | awk -F'.' '{print $2}')
+			oct1=$(ip address show | grep -A2 $VPN_INTERFACE_NAME | grep "inet " | awk -F' ' '{print $2}' | awk -F'.' '{print $1}')
+			oct2=$(ip address show | grep -A2 $VPN_INTERFACE_NAME | grep "inet " | awk -F' ' '{print $2}' | awk -F'.' '{print $2}')
 
 			if [ $oct1 -eq 192 ] && [ $oct2 -eq 168 ];
 			then
@@ -1166,7 +1155,7 @@ do
 					printf "%s VPN connected! VPN IP: %s Mobile IP: %s\n" $nowTime $vpnIpAddress $mobileIpAddress | tee -a $logFile $logHistoryFile
 					networkStatus=$Connected
 
-					if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ $auto_switch_to_rtl -eq 1 ];
+					if [ $switch_to_RTL_mode_service_started -eq 1 ] && [ $AUTO_SWITCH_TO_RTL -eq 1 ];
 					then
 						nowTime=$(date +"%T")
 						printf "%s Stopping switch to RTL service.\n" $nowTime | tee -a $logFile $logHistoryFile
@@ -1210,7 +1199,7 @@ do
 	fi
 
 	# Copy the current log file within the XOSS webpage root directory
-	cp $logFile $webpage_nw_log_file
+	cp $logFile $WEBPAGE_NW_LOG_FILE
 
-	sleep $samplingPeriodSec
+	sleep $SAMPLING_PERIOD_SEC
 done
