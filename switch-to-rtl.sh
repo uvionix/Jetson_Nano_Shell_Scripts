@@ -5,11 +5,11 @@
 # The time period is in seconds.
 ##########################
 
-nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}')
-mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autostart.service | awk -F'=' '{print $2}')
+nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 
-logFile=$(grep -i "LOG_FILE" $nw_setup_file | awk -F'=' '{print $2}')
-logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" $nw_setup_file | awk -F'=' '{print $2}')
+logFile=$(grep -i "LOG_FILE" $nw_setup_file | awk -F'"' '{print $2}')
+logHistoryFilepathContainer=$(grep -i "LOG_HISTORY_FILEPATH_CONTAINER" $nw_setup_file | awk -F'"' '{print $2}')
 logHistoryFile=$(cat $logHistoryFilepathContainer)
 chmod_port=$(grep -i local_port_chmod $mavproxy_setup_file | awk -F'"' '{print $2}')
 chmod_baudrate=$(grep -i device_baud $mavproxy_setup_file | awk -F'"' '{print $2}')

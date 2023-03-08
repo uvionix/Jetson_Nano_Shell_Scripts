@@ -126,9 +126,9 @@ PWR_ON_OFF_METHOD_I2C=0
 PWR_ON_OFF_METHOD_REGULAR_GPIO=1
 
 # SCRIPT PARAMETERS
-setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}')
-nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}')
-modemManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'=' '{print $2}')
+setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+modemManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'"' '{print $2}')
 logFile=$LOG_FILE
 powerOnDelayTimeSec=$PWR_ON_DELAY_SEC # Power on delay after the power to the modem has been switched off, [sec]
 waitAfterPowerOnSec=$WAIT_AFTER_PWR_ON_SEC # Wait time after the modem has been powered on before its status is re-evaluated, [sec]

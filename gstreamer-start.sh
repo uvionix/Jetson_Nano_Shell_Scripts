@@ -1,6 +1,6 @@
 #!/bin/bash
 
-setup_file=$(grep -i EnvironmentFile /etc/systemd/system/gstreamer-autostart.service | awk -F'=' '{print $2}')
+setup_file=$(grep -i EnvironmentFile /etc/systemd/system/gstreamer-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 > $LOG_FILE
 > $CMD_FILE
 

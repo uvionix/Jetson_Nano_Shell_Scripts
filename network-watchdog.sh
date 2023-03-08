@@ -732,11 +732,11 @@ restart_mavproxy()
 ### MAIN SCRIPT STARTS HERE ###
 
 # SCRIPT PARAMETERS
-nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}')
-mw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}')
-gst_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/gstreamer-autostart.service | awk -F'=' '{print $2}')
-mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autostart.service | awk -F'=' '{print $2}')
-openvpn_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/openvpn-autostart.service | awk -F'=' '{print $2}')
+nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+mw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+gst_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/gstreamer-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+openvpn_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/openvpn-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 Disconnected=0
 Reconnecting=1
 Connected=2
