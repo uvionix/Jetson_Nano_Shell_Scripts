@@ -33,6 +33,9 @@ check_keyboard_connected()
 		disable_wifi
 	fi
 
+	printf "Switching to runlevel multi-user.target...\n" | tee -a $logFile
+	init 3
+
 	sleep 20
 }
 
