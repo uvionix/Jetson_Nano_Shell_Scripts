@@ -1,8 +1,7 @@
 #!/bin/bash
 
-setup_file=$(grep -i EnvironmentFile /etc/systemd/system/gstreamer-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+setup_file=$(grep -i EnvironmentFile /etc/systemd/system/camera-start@.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 > $LOG_FILE
-> $CMD_FILE
 
 printf "============= INITIALIZING NEW LOG FILE =============\n" >> $LOG_FILE
 printf "Initializing camera service...\n" >> $LOG_FILE
@@ -52,28 +51,25 @@ chown $usrname $rec_root_dir/Videos/xoss
 
 # Create a subdirectory for the current session
 sub_dir_name=1
-dircontents=$(ls $rec_root_dir/Videos/xoss/)
-
-if [ -z "$dircontents" ]
-then
-    # Root directory is empty - create a subdirectory for the first session
+while true
+do
     recdir="$rec_root_dir/Videos/xoss/$sub_dir_name/"
-    mkdir -p $recdir
-else
-    # Root directory is not empty - get a subdirectory name for the current session
-    while true
-    do
-        dir_exists=$(ls $rec_root_dir/Videos/xoss/ | grep $sub_dir_name)
-        if [ -z "$dir_exists" ]
+    mkdir $recdir # Do not use a -p flag here
+    if [ $? -eq 0 ]
+    then
+        break
+    else
+        # Directory exists - check if it's empty
+        dircontents=$(ls $recdir)
+        if [ -z "$dircontents" ]
         then
-            recdir="$rec_root_dir/Videos/xoss/$sub_dir_name/"
-            mkdir -p $recdir
+            # Directory is empty - use it as a recording directory
             break
-        else
-            sub_dir_name=$((sub_dir_name+1))
         fi
-    done
-fi
+
+        sub_dir_name=$((sub_dir_name+1))
+    fi
+done
 
 chown $usrname $recdir
 printf "Recording directory set to $recdir\n" >> $LOG_FILE
@@ -83,7 +79,8 @@ printf "Recording directory set to $recdir\n" >> $LOG_FILE
 
 # Start the camera
 printf "Starting camera service...\n" >> $LOG_FILE
-/usr/local/bin/gst-start-camera $recdir $setup_file 0<$CMD_FILE 1>>$LOG_FILE 2>>$LOG_FILE
+sleep 10
+/usr/local/bin/gst-start-camera $recdir $setup_file 0<&0 &>>$LOG_FILE
 
 if [ $? -eq 0 ]
 then

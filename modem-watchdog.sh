@@ -128,7 +128,7 @@ PWR_ON_OFF_METHOD_REGULAR_GPIO=1
 # SCRIPT PARAMETERS
 setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
-modemManufacturerName=$(grep -i "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'"' '{print $2}')
+modemManufacturerName=$(grep -iw "LTE_MANUFACTURER_NAME" $nw_setup_file | awk -F'"' '{print $2}')
 logFile=$LOG_FILE
 powerOnDelayTimeSec=$PWR_ON_DELAY_SEC # Power on delay after the power to the modem has been switched off, [sec]
 waitAfterPowerOnSec=$WAIT_AFTER_PWR_ON_SEC # Wait time after the modem has been powered on before its status is re-evaluated, [sec]
@@ -152,7 +152,7 @@ echo "Modem manufacturer name set to $modemManufacturerName" | tee -a $logFile
 echo "Power enable GPIO offset set to $PWR_EN_GPIO_OFFSET" | tee -a $logFile
 
 # Check if the GPIO base value has already been configured - if not configure it
-gpio_base_configured=$(grep -i "GPIO_BASE" $setup_file)
+gpio_base_configured=$(grep -iw "GPIO_BASE" $setup_file)
 if [ -z "$gpio_base_configured" ]
 then
     echo "Configuring GPIO_BASE by examining the file /sys/kernel/debug/gpio ..." | tee -a $logFile
@@ -165,7 +165,7 @@ then
 fi
 
 # Get the GPIO base value
-gpio_base=$(grep -i "GPIO_BASE" $setup_file | awk -F'=' '{print $2}')
+gpio_base=$(grep -iw "GPIO_BASE" $setup_file | awk -F'=' '{print $2}')
 echo "GPIO base value set to $gpio_base" | tee -a $logFile
 
 # Calculate the number of the modem power enable GPIO
@@ -173,7 +173,7 @@ modem_pwr_en_gpio=$((gpio_base+$PWR_EN_GPIO_OFFSET))
 echo "Modem power enable GPIO sysfs value set to $modem_pwr_en_gpio" | tee -a $logFile
 
 # Check if the modem power enable type has already been configured - if not configure it
-modem_power_enable_type_configured=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $setup_file)
+modem_power_enable_type_configured=$(grep -iw "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $setup_file)
 if [ -z "$modem_power_enable_type_configured" ]
 then
     echo "Configuring the modem power enable GPIO configuration type by examining the file /sys/kernel/debug/gpio ..." | tee -a $logFile
@@ -192,7 +192,7 @@ then
 fi
 
 # Check if the modem power enable GPIO is configured is an I2C mux GPIO
-modem_pwr_en_gpio_as_i2c_mux=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $setup_file | awk -F'=' '{print $2}')
+modem_pwr_en_gpio_as_i2c_mux=$(grep -iw "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $setup_file | awk -F'=' '{print $2}')
 
 if [ $modem_pwr_en_gpio_as_i2c_mux -eq 1 ]
 then

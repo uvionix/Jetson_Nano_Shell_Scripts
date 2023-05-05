@@ -36,7 +36,7 @@ check_keyboard_connected()
 	printf "Switching to runlevel multi-user.target...\n" | tee -a $logFile
 	init 3
 
-	sleep 20
+	# sleep 20
 }
 
 # Check if media devices are connected
@@ -97,42 +97,99 @@ update_keyboard_connected()
 	done
 }
 
+# Handle the frame start sync error associated with e-CAM24_CUNX camera
+handle_frame_start_syncpt_timeout_err()
+{
+    # Get the number of errors in the log file
+    frame_sync_error_cnt=$(dmesg | grep -i "video4linux" | grep -i -c "frame start syncpt timeout")
+
+    if [ $frame_sync_error_cnt -gt 5 ]
+    then
+        # The number of errors is greater than the defined threshold -> find the average time between successive errors
+        # and reboot the system if it falls bellow a certain threshold
+        cnt=0
+        sum=0
+
+        dmesg | grep -i "video4linux" | grep -i "frame start syncpt timeout" | awk -F'[' '{print $2}' | awk -F']' '{print $1}' | while read -r timstamp; do
+            if [ $cnt -eq 0 ]
+            then
+                prev_timstamp=$timstamp
+                cnt=$((cnt+1))
+                continue
+            fi
+
+            dt=$(bc <<< "scale=2; ($timstamp-$prev_timstamp)")
+            sum=$(bc <<< "scale=2; ($sum+$dt)")
+            prev_timstamp=$timstamp
+            cnt=$((cnt+1))
+
+            if [ $cnt -ge $frame_sync_error_cnt ]
+            then
+                dt=$(bc <<< "scale=0; $sum/$cnt")
+                
+                if [ $dt -lt 3 ]
+                then
+					if [ $logHistoryFileGenerated -eq 1 ]
+					then
+						nowTime=$(date +"%T")
+						printf "%s Frame start sync timeout error detected! Rebooting...\n" $nowTime | tee -a $logFile $logHistoryFile
+					fi
+
+                    reboot
+                fi
+
+                break
+            fi
+        done
+    fi
+}
+
 # Check if a camera is connected
 check_camera_connected()
 {
 	camDetected=$(ls /dev/* | grep $video_device)
+
+	# Check for "frame start sync error" if the camera service is started
+	if [ ! -z "$cameraServiceName" ]
+	then
+		cam_service_started=$(systemctl status $cameraServiceName | grep -i "active:" | grep -i "running")
+		if [ ! -z "$cam_service_started" ]
+		then
+			handle_frame_start_syncpt_timeout_err
+		fi
+	fi
 
 	if [ -z "$camDetected" ]
 	then
 		# Cammera is not connected
 		if [ $camConnected -eq 1 ]
 		then
-			# Camera has been disconnected - stop gstreamer
+			# Camera has been disconnected - stop the camera service
 			camera_force_stop
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Camera disconnected. GStreamer stopped.\n" | tee -a $logFile
+				printf "\t Camera disconnected. Camera service stopped.\n" | tee -a $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Camera disconnected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile
+				printf "%s Camera disconnected. Camera service stopped.\n" $nowTime | tee -a $logFile $logHistoryFile
 			fi
 		fi
 
 		camConnected=0
 	else
-		# Camera is connected - start gstreamer only if no keyboard is detected
+		# Camera is connected - start the camera service only if no keyboard is detected
 		if [ $hmiDetected -eq 1 ]
 		then
-			# Keyboard has been detected - stop gstreamer if started
+			# Keyboard has been detected - stop the camera if started
 			if [ $camConnected -eq 1 ]
 			then
-				camera_stop
+				camera_force_stop
 				if [ $logHistoryFileGenerated -eq 0 ]
 				then
-					printf "\t Keyboard connected. GStreamer stopped.\n" | tee -a $logFile
+					printf "\t Keyboard connected. Camera service stopped.\n" | tee -a $logFile
 				else
 					nowTime=$(date +"%T")
-					printf "%s Keyboard connected. GStreamer stopped.\n" $nowTime | tee -a $logFile $logHistoryFile
+					printf "%s Keyboard connected. Camera service stopped.\n" $nowTime | tee -a $logFile $logHistoryFile
 				fi
 			fi
 
@@ -148,15 +205,16 @@ check_camera_connected()
 				camera_and_lte_connections_probed=1
 			fi
 
-			# Camera has been connected - start gstreamer
-			camera_start
+			# Camera has been connected - start the camera service
 			if [ $logHistoryFileGenerated -eq 0 ]
 			then
-				printf "\t Camera connected and no keyboard detected. GStreamer started.\n" | tee -a $logFile
+				printf "\t Camera connected and no keyboard detected. Starting camera...\n" | tee -a $logFile
 			else
 				nowTime=$(date +"%T")
-				printf "%s Camera connected and no keyboard detected. GStreamer started.\n" $nowTime | tee -a $logFile $logHistoryFile
+				printf "%s Camera connected and no keyboard detected. Starting camera...\n" $nowTime | tee -a $logFile $logHistoryFile
 			fi
+
+			camera_start
 		fi
 
 		camConnected=1
@@ -167,7 +225,7 @@ check_camera_connected()
 check_mavproxy_prerequisites()
 {
 	# Get the UART device name
-	uart_device=$(grep -i "device=" $mavproxy_setup_file | awk -F'"' '{print $2}')
+	uart_device=$(grep -iw "device=" $mavproxy_setup_file | awk -F'"' '{print $2}')
 	echo "MAVProxy UART device is: $uart_device" | tee -a $logFile
 
 	# Check the status of the nvgetty service and disable it if necessary
@@ -348,6 +406,50 @@ choose_connection_type()
 	done
 }
 
+# Check for internet connection
+check_internet_connection()
+{
+	local timOut=7
+	local address="8.8.8.8"
+	local perPacketsLostThs=50
+	local perPacketsLost=$(ping -w $timOut $address | grep -m1 "packets transmitted" | awk -F'% packet loss' '{print $1}' | awk -F'received, ' '{print $2}')
+
+	if [ $perPacketsLost -gt $perPacketsLostThs ]
+	then
+		# No internet connection
+		return 1
+	else
+		return 0
+	fi
+}
+
+# Wait for internet connection
+wait_for_internet_connection()
+{
+	while true
+	do
+		check_internet_connection
+		if [ $? -eq 0 ]
+		then
+			break
+		fi
+
+		echo -e "\t Waiting for internet..."
+		sleep 1
+	done
+}
+
+# Synchronize date and time
+sync_date_and_time()
+{
+	wait_for_internet_connection >> $logFile
+
+	timedatectl set-ntp off
+	sleep 2
+	timedatectl set-ntp on
+	sleep 10
+}
+
 # Connect to a network via the chosen connection type and start the VPN service
 network_connect()
 {
@@ -377,10 +479,8 @@ network_connect()
 				fi
 
 				echo "Connection successful! Synchronizing date and time..." | tee -a $logFile
-				timedatectl set-ntp off
-				sleep 2
-				timedatectl set-ntp on
-				sleep 10
+				service openvpn-autostart stop
+				sync_date_and_time
 
 				nowTime=$(date +"%T")
 				nowDate=$(date +"%D")
@@ -418,6 +518,7 @@ network_connect()
 				echo CONFIG_FILE_PATH=\"$ovpn_config_file\" >> $openvpn_setup_file
 				echo "$nowTime Starting the VPN service..." | tee -a $logFile
 				printf "\t VPN configuration file set to %s\n" $ovpn_config_file >> $logFile
+				wait_for_internet_connection >> $logFile
 				service openvpn-autostart restart
 
 				# Create the log history file from the log file generated so far
@@ -505,7 +606,7 @@ disable_wifi()
 	echo "Disabling WIFI..." | tee -a $logFile
 
 	# Check if the GPIO base value has already been configured - if not configure it
-	gpio_base_configured=$(grep -i "GPIO_BASE" $nw_setup_file)
+	gpio_base_configured=$(grep -iw "GPIO_BASE" $nw_setup_file)
 	if [ -z "$gpio_base_configured" ]
 	then
     	echo "Configuring GPIO_BASE by examining the file /sys/kernel/debug/gpio ..." | tee -a $logFile
@@ -518,7 +619,7 @@ disable_wifi()
 	fi
 
 	# Get the GPIO base value
-	gpio_base=$(grep -i "GPIO_BASE" $nw_setup_file | awk -F'=' '{print $2}')
+	gpio_base=$(grep -iw "GPIO_BASE" $nw_setup_file | awk -F'=' '{print $2}')
 	echo "GPIO base value set to $gpio_base" | tee -a $logFile
 
 	# Calculate the number of the wifi disable GPIO
@@ -575,9 +676,9 @@ disable_wifi()
 # Probe camera and LTE connections
 probe_camera_and_lte_connections()
 {
-	lte_disconnected_after_cam_probing=0
-	lte_wait_disconnected_cnt=0
-	lte_max_wait_disconnected_cnt=10
+	local lte_disconnected_after_cam_probing=0
+	local lte_wait_disconnected_cnt=0
+	local lte_max_wait_disconnected_cnt=10
 	echo -e "\t Camera probing is enabled..." | tee -a $logFile
 
 	# Wait until the LTE module is connected
@@ -655,35 +756,41 @@ probe_camera_and_lte_connections()
 	#sleep 10
 }
 
-# Start recording
-camera_start_recording()
+# Get the name of the camera service
+get_camera_service_name()
 {
-	echo $cam_start_rec_cmd >> $gst_cmds_file
-}
+	while true
+	do
+		cameraServiceName=$(systemctl --type=service --state=active | grep -m1 camera-start@ | awk -F' ' '{print $1}')
+		if [ ! -z "$cameraServiceName" ]
+		then
+			if [ $logHistoryFileGenerated -eq 0 ]
+			then
+				printf "\t Camera service name initialized as %s\n" $cameraServiceName | tee -a $logFile
+			else
+				nowTime=$(date +"%T")
+				printf "%s Camera service name initialized as %s\n" $nowTime $cameraServiceName | tee -a $logFile $logHistoryFile
+			fi
+			
+			break
+		fi
 
-# Stop recording
-camera_stop_recording()
-{
-	echo $cam_stop_rec_cmd >> $gst_cmds_file
+		sleep $SAMPLING_PERIOD_SEC
+	done
 }
 
 # Start the camera
 camera_start()
 {
-	service gstreamer-autostart start
+	systemctl start camera-start.socket
+	get_camera_service_name
 }
 
-# Stop the camera
-camera_stop()
-{
-	# This command will also stop the gstreamer-autostart service
-	echo $cam_quit_service_cmd >> $gst_cmds_file
-}
-
-# Stop the camera by terminating the gstreamer-autostart service
+# Stop the camera by terminating the camera service
 camera_force_stop()
 {
-	service gstreamer-autostart stop
+	systemctl stop camera-start.socket
+	systemctl stop $cameraServiceName
 }
 
 # Start MAVProxy
@@ -737,20 +844,16 @@ restart_mavproxy()
 # SCRIPT PARAMETERS
 nw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/network-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 mw_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/modem-watchdog.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
-gst_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/gstreamer-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
+gst_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/camera-start@.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 openvpn_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/openvpn-autostart.service | awk -F'=' '{print $2}' | sed s/'\s'//g)
 Disconnected=0
 Reconnecting=1
 Connected=2
-chmod_port=$(grep -i local_port_chmod $mavproxy_setup_file | awk -F'"' '{print $2}')
-chmod_baudrate=$(grep -i device_baud $mavproxy_setup_file | awk -F'"' '{print $2}')
-gst_cmds_file=$(grep -i cmd_file $gst_setup_file | awk -F'"' '{print $2}')
-cam_start_rec_cmd=$(grep -i CAMERA_START_REC_HOTKEY $gst_setup_file | awk -F'"' '{print $2}')
-cam_stop_rec_cmd=$(grep -i CAMERA_STOP_REC_HOTKEY $gst_setup_file | awk -F'"' '{print $2}')
-cam_quit_service_cmd=$(grep -i CAMERA_QUIT_SERVICE_HOTKEY $gst_setup_file | awk -F'"' '{print $2}')
-video_device=$(grep -i capture_dev $gst_setup_file | awk -F'"' '{print $2}')
-rec_destination_dev=$(grep -i rec_destination_dev $gst_setup_file | awk -F'"' '{print $2}')
+chmod_port=$(grep -iw local_port_chmod $mavproxy_setup_file | awk -F'"' '{print $2}')
+chmod_baudrate=$(grep -iw device_baud $mavproxy_setup_file | awk -F'"' '{print $2}')
+video_device=$(grep -iw capture_dev $gst_setup_file | awk -F'"' '{print $2}')
+rec_destination_dev=$(grep -iw rec_destination_dev $gst_setup_file | awk -F'"' '{print $2}')
 max_net_con_count=15 # Final value of the mobile network connection counter after which a new connection attempt will be made if the mobile network is available
 max_vpn_con_count=15 # Final value of the VPN network connection counter after which the VPN service is restarted
 max_ip_address_wait_count=10 # Final value of the wait for IP address counter after which the network is disconnected
@@ -766,6 +869,7 @@ wifiInterfaceName=$WIFI_INTERFACE_NAME
 lteDeviceName=""
 mobileConnectionName=""
 mobileInterfaceName=""
+cameraServiceName=""
 networkStatus=$Reconnecting
 media_devices_count=0
 vpn_con_count=0
@@ -787,20 +891,20 @@ printf "============= INITIALIZING NEW LOG FILE =============\n" >> $logFile
 echo "Initializing..." | tee -a $logFile
 
 # Check if the modem power enable type has been configured
-modem_power_enable_type_configured=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $mw_setup_file)
+modem_power_enable_type_configured=$(grep -iw "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $mw_setup_file)
 if [ -z "$modem_power_enable_type_configured" ]
 then
+	printf "Modem power enable GPIO type is not configured. Camera probing will be enabled!\n" >> $logFile
 	camera_and_lte_connections_probed=0
 else
 	# Check if the modem power enable GPIO is configured is an I2C mux GPIO
-	modem_pwr_en_gpio_as_i2c_mux=$(grep -i "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $mw_setup_file | awk -F'=' '{print $2}')
+	modem_pwr_en_gpio_as_i2c_mux=$(grep -iw "MODEM_PWR_EN_GPIO_AS_I2C_MUX" $mw_setup_file | awk -F'=' '{print $2}')
 
 	if [ $modem_pwr_en_gpio_as_i2c_mux -eq 1 ]
 	then
+		printf "Modem power enable GPIO is configured as an I2C mux GPIO. Camera probing is enabled!\n" >> $logFile
     	camera_and_lte_connections_probed=0
 	else
-    	echo "Modem power enable GPIO is NOT configured as an I2C mux GPIO. Camera probing is disabled!"
-    	printf "Modem power enable GPIO is NOT configured as an I2C mux GPIO. Camera probing is disabled!\n" >> $logFile
     	camera_and_lte_connections_probed=1
 	fi
 fi
@@ -834,6 +938,17 @@ then
 	done
 fi
 
+# Check if the camera service has been started
+cam_socket_started=$(systemctl status camera-start.socket | grep -i "active:" | grep -i "running")
+uav_status_service_started=$(service update-uav-latest-status status | grep -i "active:" | grep -i "running")
+if [ ! -z "$cam_socket_started" ] && [ ! -z "$uav_status_service_started" ];
+then
+	echo "Camera connected and has been started!" | tee -a $logFile
+	camera_and_lte_connections_probed=1
+	get_camera_service_name
+	camConnected=1
+fi
+
 # Check if media devices are connected
 check_media_devices_connected
 
@@ -841,14 +956,6 @@ check_media_devices_connected
 start_mavproxy
 
 # Start using camera immediately if detected
-cam_service_started=$(service gstreamer-autostart status | grep -i "active:" | grep -i "running")
-if [ ! -z "$cam_service_started" ]
-then
-	echo "Camera connected. Gstreamer already started!" | tee -a $logFile
-	camera_and_lte_connections_probed=1
-	camConnected=1
-fi
-
 if [ $camConnected -eq 0 ] && [ ! -z "$camDetected" ] && [ $hmiDetected -eq 0 ];
 then
 	if [ $camera_and_lte_connections_probed -eq 0 ]
@@ -857,7 +964,7 @@ then
 		camera_and_lte_connections_probed=1
 	fi
 
-	echo "Camera connected. Starting gstreamer..." | tee -a $logFile
+	echo "Camera connected. Starting the camera service..." | tee -a $logFile
 	camera_start
 	camConnected=1
 fi
