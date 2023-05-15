@@ -11,7 +11,7 @@ mavproxy_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/mavproxy-autos
 logFile=$(grep -iw "LOG_FILE" $nw_setup_file | awk -F'"' '{print $2}')
 logHistoryFilepathContainer=$(grep -iw "LOG_HISTORY_FILEPATH_CONTAINER" $nw_setup_file | awk -F'"' '{print $2}')
 logHistoryFile=$(cat $logHistoryFilepathContainer)
-chmod_port=$(grep -iw local_port_chmod $mavproxy_setup_file | awk -F'"' '{print $2}')
+chmod_port=$(grep -iw COM_SERVER_SOCKET_PORT $mavproxy_setup_file | awk -F'"' '{print $2}')
 chmod_baudrate=$(grep -iw device_baud $mavproxy_setup_file | awk -F'"' '{print $2}')
 
 sleep_count=$TIMOUT
@@ -26,7 +26,7 @@ do
     if [ $sleep_count -eq 0 ]
     then
         printf "\t Switching to RTL...\n" | tee -a $logFile $logHistoryFile
-        /usr/local/bin/chmod_offline.py $chmod_port $chmod_baudrate rtl | tee -a $logFile $logHistoryFile
+        /usr/local/bin/chmod_offline.py $chmod_port rtl | tee -a $logFile $logHistoryFile
 
         if [ $? -eq 0 ]
         then

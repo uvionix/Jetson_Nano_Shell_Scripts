@@ -19,14 +19,14 @@ check_keyboard_connected()
 		then
 			if [[ "$(cat $dev/bInterfaceClass)" == "03" && "$(cat $dev/bInterfaceProtocol)" == "01" ]]
 			then
-				printf "Keyboard detected. WIFI connection type is selected.\n" | tee -a $logFile
+				printf "Keyboard detected...\n" | tee -a $logFile
 				hmiDetected=1
 				return
 			fi
 		fi
 	done
 
-	printf "Keyboard not detected. LTE connection type is selected.\n" | tee -a $logFile
+	printf "Keyboard not detected...\n" | tee -a $logFile
 
 	if [ $DISABLE_WIFI_IF_LTE_NETWORK_IS_SELECTED -eq 1 ]
 	then
@@ -294,24 +294,53 @@ choose_connection_type()
 			lteNetworkSelected=1
 			pref_wifi_con_count=$max_pref_wifi_con_count
 			wifiConnectionFound=""
-			echo "Check if the LTE module is connected..." | tee -a $logFile
+			echo "LTE connection type is selected..." | tee -a $logFile
 		fi
 
 		if [ $lteNetworkSelected -eq 0 ]
 		then
 			# WIFI connection type is selected -> check if a preffered WIFI connection is available
 			echo "Check if a preffered WIFI connection is available..." | tee -a $logFile
-			# wifiConnectionName=$(nmcli connection | grep -m1 "wifi" | awk -F' ' '{print $1}')
-			wifiConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 wifi | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
-			len=`expr length "$wifiConnectionName"`
+			reg_wifi_connections=$(nmcli -m multiline connection show | grep -c -B2 wifi)
 
-			if [ $len -gt $((min_wifi_con_name_length-1)) ]
+			wifiConnectionName=""
+			if [ $reg_wifi_connections -gt 0 ]
+			then
+				# wifiConnectionName=$(nmcli connection | grep -m1 "wifi" | awk -F' ' '{print $1}')
+				# wifiConnectionName=$(nmcli -m multiline connection show | grep -m1 -B2 wifi | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
+				readarray -t connections < <(nmcli -m multiline connection show | grep -B2 wifi | grep -i name | awk -F':' '{print $2}' | sed -e 's/^[ \t]*//')
+
+				for conn in ${connections[@]}; do
+					wifiConnectionFound=$(nmcli device wifi list | grep -w "$conn")
+					if [ ! -z "$wifiConnectionFound" ]
+					then
+						wifiConnectionName=$conn
+						break
+					fi
+				done
+
+				if [ -z "$wifiConnectionName" ]
+				then
+					echo "No registered WIFI connections are in range! Rescanning..." | tee -a $logFile
+				fi
+			else
+				echo "No registered WIFI connections detected!" | tee -a $logFile
+			fi
+						
+			#len=`expr length "$wifiConnectionName"`
+
+			if [ ! -z "$wifiConnectionName" ] # $len -gt $((min_wifi_con_name_length-1))
 			then
 				wifiConnectionFound=$(nmcli device wifi list | grep -w "$wifiConnectionName")
 				# pref_wifi_con_count=0
 			else
 				pref_wifi_con_count=$((pref_wifi_con_count+1))
-				echo "Invalid WIFI connection name" "$wifiConnectionName" "obtained. Connection name must be at least" "$min_wifi_con_name_length" "characters long!" | tee -a $logFile
+				
+				#if [ $reg_wifi_connections -gt 0 ]
+				#then
+				#	echo "Invalid WIFI connection name" "$wifiConnectionName" "obtained. Connection name must be at least" "$min_wifi_con_name_length" "characters long!" | tee -a $logFile
+				#fi
+
 				sleep $SAMPLING_PERIOD_SEC
 
 				if [ $pref_wifi_con_count -le $max_pref_wifi_con_count ]
@@ -332,6 +361,8 @@ choose_connection_type()
 				if [ $lteNetworkSelected -eq 0 ]
 				then
 					echo "Preffered WIFI connection is not available. Check if the LTE module is connected..." | tee -a $logFile
+				else
+					echo "Check if the LTE module is connected..." | tee -a $logFile
 				fi
 
 				lteNetworkSelected=1
@@ -381,7 +412,7 @@ choose_connection_type()
 					# LTE module is not connected
 					if [ $hmiDetected -eq 1 ]
 					then
-						echo "LTE module is not connected. Scanning for a preffered WIFI connection..." | tee -a $logFile
+						echo "LTE module is not connected. WIFI connection type is selected..." | tee -a $logFile
 					else
 						echo "LTE module is not connected. Process restarting..." | tee -a $logFile
 					fi
@@ -567,7 +598,7 @@ process_network_just_disconnected()
 	if [ $AUTO_SWITCH_TO_LOITER -eq 1 ]
 	then
 		printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile
-		/usr/local/bin/chmod_offline.py $chmod_port $chmod_baudrate loiter | tee -a $logFile $logHistoryFile
+		/usr/local/bin/chmod_offline.py $chmod_port loiter | tee -a $logFile $logHistoryFile
 	else
 		printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 	fi
@@ -850,7 +881,7 @@ openvpn_setup_file=$(grep -i EnvironmentFile /etc/systemd/system/openvpn-autosta
 Disconnected=0
 Reconnecting=1
 Connected=2
-chmod_port=$(grep -iw local_port_chmod $mavproxy_setup_file | awk -F'"' '{print $2}')
+chmod_port=$(grep -iw COM_SERVER_SOCKET_PORT $mavproxy_setup_file | awk -F'"' '{print $2}')
 chmod_baudrate=$(grep -iw device_baud $mavproxy_setup_file | awk -F'"' '{print $2}')
 video_device=$(grep -iw capture_dev $gst_setup_file | awk -F'"' '{print $2}')
 rec_destination_dev=$(grep -iw rec_destination_dev $gst_setup_file | awk -F'"' '{print $2}')
@@ -1209,7 +1240,7 @@ do
 				if [ $AUTO_SWITCH_TO_LOITER -eq 1 ]
 				then
 					printf "%s Switching to LOITER mode...\n" $nowTime | tee -a $logFile $logHistoryFile
-					/usr/local/bin/chmod_offline.py $chmod_port $chmod_baudrate loiter | tee -a $logFile $logHistoryFile
+					/usr/local/bin/chmod_offline.py $chmod_port loiter | tee -a $logFile $logHistoryFile
 				else
 					printf "%s Auto switching to LOITER mode is disabled!\n" $nowTime | tee -a $logFile $logHistoryFile
 				fi
