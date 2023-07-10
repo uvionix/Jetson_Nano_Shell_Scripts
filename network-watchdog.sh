@@ -549,12 +549,12 @@ network_connect()
 				echo CONFIG_FILE_PATH=\"$ovpn_config_file\" >> $openvpn_setup_file
 				echo "$nowTime Starting the VPN service..." | tee -a $logFile
 				printf "\t VPN configuration file set to %s\n" $ovpn_config_file >> $logFile
-				wait_for_internet_connection >> $logFile
-				service openvpn-autostart restart
 
 				# Create the log history file from the log file generated so far
 				# (from now on every log message is written to $logFile and $logHistoryFile)
 				cp $logFile $logHistoryFile
+				wait_for_internet_connection | tee -a $logFile $logHistoryFile
+				service openvpn-autostart restart
 				break
 			else
 				echo "Connection failed! Retrying..." | tee -a $logFile
